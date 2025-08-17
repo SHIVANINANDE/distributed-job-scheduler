@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: distributed-job-scheduler-db
+    environment:
+      POSTGRES_DB: distributed_job_scheduler
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/main/resources/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - job-scheduler-network
+
+  adminer:
+    image: adminer
+    container_name: distributed-job-scheduler-adminer
+    ports:
+      - "8081:8080"
+    networks:
+      - job-scheduler-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+
+networks:
+  job-scheduler-network:
+    driver: bridge
