@@ -8,13 +8,43 @@ services:
       POSTGRES_DB: distributed_job_scheduler
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
+      # Connection pooling and performance settings
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/src/main/resources/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backend/src/main/resources/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./backend/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/02-schema.sql
+      - ./backend/src/main/resources/data.sql:/docker-entrypoint-initdb.d/03-data.sql
+      - ./postgres.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     networks:
       - job-scheduler-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d distributed_job_scheduler"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    container_name: distributed-job-scheduler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - job-scheduler-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   adminer:
     image: adminer
@@ -26,8 +56,21 @@ services:
     depends_on:
       - postgres
 
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: distributed-job-scheduler-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8082:8081"
+    networks:
+      - job-scheduler-network
+    depends_on:
+      - redis
+
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   job-scheduler-network:
