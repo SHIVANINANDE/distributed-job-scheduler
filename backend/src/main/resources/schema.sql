@@ -1,7 +1,8 @@
--- Database Schema for Distributed Job Scheduler
+-- Schema for distributed job scheduler
+-- H2 Database compatible schema
 
--- Create extension for UUID generation
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Note: H2 doesn't support PostgreSQL extensions
+-- UUID functions are built-in for H2
 
 -- Create ENUM types
 CREATE TYPE job_status AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'SCHEDULED');

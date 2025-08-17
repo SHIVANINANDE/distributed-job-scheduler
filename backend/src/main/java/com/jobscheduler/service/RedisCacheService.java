@@ -2,6 +2,8 @@ package com.jobscheduler.service;
 
 import com.jobscheduler.model.Job;
 import com.jobscheduler.model.JobStatus;
+import com.jobscheduler.model.Worker;
+import com.jobscheduler.model.JobDependency;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,9 @@ public class RedisCacheService {
     private static final String JOB_STATUS_KEY_PREFIX = "job:status:";
     private static final String WORKER_HEARTBEAT_PREFIX = "worker:heartbeat:";
     private static final String JOB_METRICS_PREFIX = "job:metrics:";
+    private static final String WORKER_CACHE_KEY_PREFIX = "worker:cache:";
+    private static final String DEPENDENCY_CACHE_KEY_PREFIX = "dependency:cache:";
+    private static final String JOB_DEPENDENCIES_KEY_PREFIX = "job:dependencies:";
     
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -329,6 +334,177 @@ public class RedisCacheService {
         } catch (Exception e) {
             logger.error("Failed to clear cache by pattern {}", pattern, e);
             return 0L;
+        }
+    }
+
+    // Worker caching methods
+    
+    /**
+     * Cache a worker object
+     * 
+     * @param workerId The worker identifier
+     * @param worker The worker object to cache
+     * @param ttlMinutes Time to live in minutes
+     */
+    @CachePut(value = "workers", key = "#workerId")
+    public Worker cacheWorker(String workerId, Worker worker, long ttlMinutes) {
+        try {
+            String key = WORKER_CACHE_KEY_PREFIX + workerId;
+            redisTemplate.opsForValue().set(key, worker, ttlMinutes, TimeUnit.MINUTES);
+            logger.debug("Cached worker {} with TTL {} minutes", workerId, ttlMinutes);
+            return worker;
+        } catch (Exception e) {
+            logger.error("Failed to cache worker {}", workerId, e);
+            return worker;
+        }
+    }
+
+    /**
+     * Retrieve a cached worker
+     * 
+     * @param workerId The worker identifier
+     * @return The cached worker or null if not found
+     */
+    @Cacheable(value = "workers", key = "#workerId")
+    public Worker getCachedWorker(String workerId) {
+        try {
+            String key = WORKER_CACHE_KEY_PREFIX + workerId;
+            Object cachedWorker = redisTemplate.opsForValue().get(key);
+            if (cachedWorker instanceof Worker) {
+                logger.debug("Retrieved cached worker {}", workerId);
+                return (Worker) cachedWorker;
+            }
+            logger.debug("Worker {} not found in cache", workerId);
+            return null;
+        } catch (Exception e) {
+            logger.error("Failed to retrieve cached worker {}", workerId, e);
+            return null;
+        }
+    }
+
+    /**
+     * Remove a worker from cache
+     * 
+     * @param workerId The worker identifier
+     */
+    @CacheEvict(value = "workers", key = "#workerId")
+    public void evictWorkerFromCache(String workerId) {
+        try {
+            String key = WORKER_CACHE_KEY_PREFIX + workerId;
+            Boolean deleted = redisTemplate.delete(key);
+            logger.debug("Evicted worker {} from cache: {}", workerId, deleted);
+        } catch (Exception e) {
+            logger.error("Failed to evict worker {} from cache", workerId, e);
+        }
+    }
+
+    // Dependency caching methods
+    
+    /**
+     * Cache a job dependency
+     * 
+     * @param dependencyKey The dependency cache key
+     * @param dependency The dependency object to cache
+     * @param ttlMinutes Time to live in minutes
+     */
+    public JobDependency cacheDependency(String dependencyKey, JobDependency dependency, long ttlMinutes) {
+        try {
+            String key = DEPENDENCY_CACHE_KEY_PREFIX + dependencyKey;
+            redisTemplate.opsForValue().set(key, dependency, ttlMinutes, TimeUnit.MINUTES);
+            logger.debug("Cached dependency {} with TTL {} minutes", dependencyKey, ttlMinutes);
+            return dependency;
+        } catch (Exception e) {
+            logger.error("Failed to cache dependency {}", dependencyKey, e);
+            return dependency;
+        }
+    }
+
+    /**
+     * Retrieve a cached dependency
+     * 
+     * @param dependencyKey The dependency cache key
+     * @return The cached dependency or null if not found
+     */
+    public JobDependency getCachedDependency(String dependencyKey) {
+        try {
+            String key = DEPENDENCY_CACHE_KEY_PREFIX + dependencyKey;
+            Object cachedDependency = redisTemplate.opsForValue().get(key);
+            if (cachedDependency instanceof JobDependency) {
+                logger.debug("Retrieved cached dependency {}", dependencyKey);
+                return (JobDependency) cachedDependency;
+            }
+            logger.debug("Dependency {} not found in cache", dependencyKey);
+            return null;
+        } catch (Exception e) {
+            logger.error("Failed to retrieve cached dependency {}", dependencyKey, e);
+            return null;
+        }
+    }
+
+    /**
+     * Remove a dependency from cache
+     * 
+     * @param dependencyKey The dependency cache key
+     */
+    public void evictDependencyFromCache(String dependencyKey) {
+        try {
+            String key = DEPENDENCY_CACHE_KEY_PREFIX + dependencyKey;
+            Boolean deleted = redisTemplate.delete(key);
+            logger.debug("Evicted dependency {} from cache: {}", dependencyKey, deleted);
+        } catch (Exception e) {
+            logger.error("Failed to evict dependency {} from cache", dependencyKey, e);
+        }
+    }
+
+    /**
+     * Cache job dependencies list
+     * 
+     * @param cacheKey The cache key for the dependencies list
+     * @param dependencies The list of dependencies to cache
+     * @param ttlMinutes Time to live in minutes
+     */
+    public void cacheJobDependencies(String cacheKey, List<JobDependency> dependencies, long ttlMinutes) {
+        try {
+            redisTemplate.opsForValue().set(cacheKey, dependencies, ttlMinutes, TimeUnit.MINUTES);
+            logger.debug("Cached job dependencies list {} (size: {}) for {} minutes", 
+                        cacheKey, dependencies.size(), ttlMinutes);
+        } catch (Exception e) {
+            logger.error("Failed to cache job dependencies list {}", cacheKey, e);
+        }
+    }
+
+    /**
+     * Retrieve cached job dependencies list
+     * 
+     * @param cacheKey The cache key for the dependencies list
+     * @return The cached dependencies list or null if not found
+     */
+    @SuppressWarnings("unchecked")
+    public List<JobDependency> getCachedJobDependencies(String cacheKey) {
+        try {
+            Object cachedDependencies = redisTemplate.opsForValue().get(cacheKey);
+            if (cachedDependencies instanceof List) {
+                logger.debug("Retrieved cached job dependencies list {}", cacheKey);
+                return (List<JobDependency>) cachedDependencies;
+            }
+            return null;
+        } catch (Exception e) {
+            logger.error("Failed to retrieve cached job dependencies list {}", cacheKey, e);
+            return null;
+        }
+    }
+
+    /**
+     * Remove job dependencies list from cache
+     * 
+     * @param cacheKey The cache key for the dependencies list
+     */
+    public void evictJobDependenciesFromCache(String cacheKey) {
+        try {
+            Boolean deleted = redisTemplate.delete(cacheKey);
+            logger.debug("Evicted job dependencies list {} from cache: {}", cacheKey, deleted);
+        } catch (Exception e) {
+            logger.error("Failed to evict job dependencies list {} from cache", cacheKey, e);
         }
     }
 

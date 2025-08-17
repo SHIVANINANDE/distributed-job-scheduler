@@ -25,6 +25,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers(
                     new AntPathRequestMatcher("/api/v1/jobs/health"),
+                    new AntPathRequestMatcher("/api/**"),
                     new AntPathRequestMatcher("/h2-console/**"),
                     new AntPathRequestMatcher("/actuator/**")
                 ).permitAll()

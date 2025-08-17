@@ -114,4 +114,20 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
            "COALESCE(SUM(w.totalJobsSuccessful), 0) as totalJobsSuccessful " +
            "FROM Worker w")
     Object[] getWorkerStatistics();
+    
+    /**
+     * Find workers assigned to specific jobs
+     */
+    @Query("SELECT w FROM Worker w WHERE w.currentJobIds IS NOT NULL AND (" +
+           "w.currentJobIds LIKE CONCAT('%[', CAST(:jobId AS string), ']%') OR " +
+           "w.currentJobIds LIKE CONCAT('%[', CAST(:jobId AS string), ',%') OR " +
+           "w.currentJobIds LIKE CONCAT('%,', CAST(:jobId AS string), ']%') OR " +
+           "w.currentJobIds LIKE CONCAT('%,', CAST(:jobId AS string), ',%'))")
+    List<Worker> findWorkersAssignedToJob(@Param("jobId") Long jobId);
+    
+    /**
+     * Find workers assigned to any of the specified jobs
+     */
+    @Query("SELECT DISTINCT w FROM Worker w WHERE w.currentJobIds IS NOT NULL")
+    List<Worker> findWorkersAssignedToJobs(@Param("jobIds") List<Long> jobIds);
 }
