@@ -76,8 +76,32 @@ public class Worker {
     @Column(name = "tags", columnDefinition = "TEXT")
     private String tags; // JSON array of tags for job matching
     
+    // Current Job Assignment Information
+    @Column(name = "current_job_ids", columnDefinition = "TEXT")
+    private String currentJobIds; // JSON array of currently assigned job IDs
+    
+    @Column(name = "available_capacity")
+    private Integer availableCapacity; // Calculated available capacity
+    
+    @Column(name = "reserved_capacity")
+    private Integer reservedCapacity = 0; // Capacity reserved for high-priority jobs
+    
+    @Column(name = "processing_capacity")
+    private Integer processingCapacity; // Current processing capacity in use
+    
+    @Column(name = "queue_capacity")
+    private Integer queueCapacity = 0; // Number of jobs in worker's queue
+    
+    @Column(name = "priority_threshold")
+    private Integer priorityThreshold = 100; // Minimum priority for this worker
+    
+    @Column(name = "worker_load_factor")
+    private Double workerLoadFactor = 1.0; // Load adjustment factor (0.1 to 2.0)
+    
     // Constructors
-    public Worker() {}
+    public Worker() {
+        updateAvailableCapacity();
+    }
     
     public Worker(String workerId, String name) {
         this.workerId = workerId;
@@ -88,6 +112,11 @@ public class Worker {
         this.totalJobsProcessed = 0L;
         this.totalJobsSuccessful = 0L;
         this.totalJobsFailed = 0L;
+        this.reservedCapacity = 0;
+        this.queueCapacity = 0;
+        this.priorityThreshold = 100;
+        this.workerLoadFactor = 1.0;
+        updateAvailableCapacity();
     }
     
     // Getters and Setters
@@ -243,17 +272,134 @@ public class Worker {
         this.tags = tags;
     }
     
+    public String getCurrentJobIds() {
+        return currentJobIds;
+    }
+    
+    public void setCurrentJobIds(String currentJobIds) {
+        this.currentJobIds = currentJobIds;
+    }
+    
+    public Integer getAvailableCapacity() {
+        return availableCapacity;
+    }
+    
+    public void setAvailableCapacity(Integer availableCapacity) {
+        this.availableCapacity = availableCapacity;
+    }
+    
+    public Integer getReservedCapacity() {
+        return reservedCapacity;
+    }
+    
+    public void setReservedCapacity(Integer reservedCapacity) {
+        this.reservedCapacity = reservedCapacity;
+        updateAvailableCapacity();
+    }
+    
+    public Integer getProcessingCapacity() {
+        return processingCapacity;
+    }
+    
+    public void setProcessingCapacity(Integer processingCapacity) {
+        this.processingCapacity = processingCapacity;
+    }
+    
+    public Integer getQueueCapacity() {
+        return queueCapacity;
+    }
+    
+    public void setQueueCapacity(Integer queueCapacity) {
+        this.queueCapacity = queueCapacity;
+    }
+    
+    public Integer getPriorityThreshold() {
+        return priorityThreshold;
+    }
+    
+    public void setPriorityThreshold(Integer priorityThreshold) {
+        this.priorityThreshold = priorityThreshold;
+    }
+    
+    public Double getWorkerLoadFactor() {
+        return workerLoadFactor;
+    }
+    
+    public void setWorkerLoadFactor(Double workerLoadFactor) {
+        this.workerLoadFactor = Math.max(0.1, Math.min(2.0, workerLoadFactor));
+    }
+    
     // Utility methods
     public boolean isActive() {
         return status == WorkerStatus.ACTIVE;
     }
     
     public boolean isAvailable() {
-        return isActive() && currentJobCount < maxConcurrentJobs;
+        return isActive() && currentJobCount < maxConcurrentJobs && hasAvailableCapacity();
     }
     
     public boolean canAcceptJob() {
         return isAvailable();
+    }
+    
+    public boolean canAcceptJob(int priority) {
+        return isAvailable() && priority >= priorityThreshold;
+    }
+    
+    public boolean hasAvailableCapacity() {
+        return availableCapacity != null && availableCapacity > 0;
+    }
+    
+    public boolean canAcceptHighPriorityJob(int priority) {
+        return isActive() && priority >= 500 && (currentJobCount + reservedCapacity) < maxConcurrentJobs;
+    }
+    
+    public void updateAvailableCapacity() {
+        if (maxConcurrentJobs != null) {
+            int reserved = (reservedCapacity != null) ? reservedCapacity : 0;
+            int current = (currentJobCount != null) ? currentJobCount : 0;
+            this.availableCapacity = Math.max(0, maxConcurrentJobs - current - reserved);
+            this.processingCapacity = current;
+        } else {
+            this.availableCapacity = 0;
+            this.processingCapacity = 0;
+        }
+    }
+    
+    public void assignJob(Long jobId) {
+        incrementJobCount();
+        addJobToCurrentAssignments(jobId);
+        updateAvailableCapacity();
+    }
+    
+    public void unassignJob(Long jobId) {
+        decrementJobCount();
+        removeJobFromCurrentAssignments(jobId);
+        updateAvailableCapacity();
+    }
+    
+    private void addJobToCurrentAssignments(Long jobId) {
+        if (currentJobIds == null || currentJobIds.isEmpty()) {
+            this.currentJobIds = "[" + jobId + "]";
+        } else {
+            // Simple JSON array manipulation - in production, use proper JSON library
+            String newJobIds = currentJobIds.substring(0, currentJobIds.length() - 1);
+            if (!newJobIds.equals("[")) {
+                newJobIds += ",";
+            }
+            newJobIds += jobId + "]";
+            this.currentJobIds = newJobIds;
+        }
+    }
+    
+    private void removeJobFromCurrentAssignments(Long jobId) {
+        if (currentJobIds != null && !currentJobIds.isEmpty()) {
+            // Simple JSON array manipulation - in production, use proper JSON library
+            this.currentJobIds = currentJobIds.replace("," + jobId, "").replace(jobId + ",", "").replace("[" + jobId + "]", "[]");
+            if (this.currentJobIds.equals("[,]") || this.currentJobIds.equals("[]")) {
+                this.currentJobIds = "[]";
+            }
+        }
     }
     
     public void incrementJobCount() {
@@ -296,6 +442,23 @@ public class Worker {
         return (double) (currentJobCount != null ? currentJobCount : 0) / maxConcurrentJobs * 100.0;
     }
     
+    public double getEffectiveLoadFactor() {
+        return getLoadPercentage() * (workerLoadFactor != null ? workerLoadFactor : 1.0);
+    }
+    
+    public int getEffectiveCapacity() {
+        if (maxConcurrentJobs == null) return 0;
+        return (int) Math.floor(maxConcurrentJobs * (workerLoadFactor != null ? workerLoadFactor : 1.0));
+    }
+    
+    public boolean isOverloaded() {
+        return getLoadPercentage() > 90.0;
+    }
+    
+    public boolean isUnderUtilized() {
+        return getLoadPercentage() < 20.0 && isActive();
+    }
+    
     @Override
     public String toString() {
         return "Worker{" +
@@ -307,6 +470,9 @@ public class Worker {
                 ", port=" + port +
                 ", currentJobCount=" + currentJobCount +
                 ", maxConcurrentJobs=" + maxConcurrentJobs +
+                ", availableCapacity=" + availableCapacity +
+                ", reservedCapacity=" + reservedCapacity +
+                ", loadFactor=" + workerLoadFactor +
                 ", lastHeartbeat=" + lastHeartbeat +
                 '}';
     }
