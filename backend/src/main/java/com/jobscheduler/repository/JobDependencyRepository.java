@@ -3,10 +3,14 @@ package com.jobscheduler.repository;
 import com.jobscheduler.model.JobDependency;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface JobDependencyRepository extends JpaRepository<JobDependency, Long> {
@@ -36,17 +40,38 @@ public interface JobDependencyRepository extends JpaRepository<JobDependency, Lo
     /**
      * Find dependencies by job and dependency job ID
      */
-    JobDependency findByJobIdAndDependencyJobId(Long jobId, Long dependencyJobId);
+    Optional<JobDependency> findByJobIdAndDependencyJobId(Long jobId, Long dependencyJobId);
+    
+    /**
+     * Check if a dependency exists between two jobs
+     */
+    boolean existsByJobIdAndDependencyJobId(Long jobId, Long dependencyJobId);
+    
+    /**
+     * Find dependencies by satisfaction status for a specific parent job
+     */
+    List<JobDependency> findByDependencyJobIdAndIsSatisfied(Long dependencyJobId, Boolean isSatisfied);
     
     /**
      * Delete all dependencies for a job
      */
+    @Modifying
+    @Transactional
     void deleteByJobId(Long jobId);
     
     /**
      * Delete all dependencies that depend on a specific job
      */
+    @Modifying
+    @Transactional
     void deleteByDependencyJobId(Long dependencyJobId);
+    
+    /**
+     * Delete specific dependency between two jobs
+     */
+    @Modifying
+    @Transactional
+    void deleteByJobIdAndDependencyJobId(Long jobId, Long dependencyJobId);
     
     /**
      * Count unsatisfied dependencies for a job

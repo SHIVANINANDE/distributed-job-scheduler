@@ -28,13 +28,16 @@ public class JobSchedulerService {
     @Autowired
     private WorkerService workerService;
     
+    @Autowired
+    private DependencyGraphService dependencyGraphService;
+    
     /**
-     * Process jobs from the priority queue periodically
+     * Process jobs from the priority queue with dependency checking
      */
     @Scheduled(fixedDelay = 5000) // Run every 5 seconds
     public void processJobQueue() {
         try {
-            logger.debug("Processing job queue...");
+            logger.debug("Processing job queue with dependency checking...");
             
             // Get available workers
             List<Worker> availableWorkers = workerService.getAvailableWorkers();
@@ -44,11 +47,23 @@ public class JobSchedulerService {
                 return;
             }
             
+            // Get jobs ready for execution (dependency-aware)
+            List<Job> readyJobs = dependencyGraphService.getJobsReadyForExecution();
+            
+            if (readyJobs.isEmpty()) {
+                logger.debug("No jobs ready for execution (checking dependencies)");
+                return;
+            }
+            
             // Process jobs for each available worker
+            int processedJobs = 0;
             for (Worker worker : availableWorkers) {
-                if (worker.hasAvailableCapacity()) {
-                    Job job = queueService.popHighestPriorityJob();
-                    if (job != null) {
+                if (worker.hasAvailableCapacity() && processedJobs < readyJobs.size()) {
+                    Job job = readyJobs.get(processedJobs);
+                    
+                    // Double-check job is still in priority queue and ready
+                    Job queuedJob = queueService.popHighestPriorityJob();
+                    if (queuedJob != null && queuedJob.getId().equals(job.getId())) {
                         assignJobToWorker(job, worker);
                     } else {
                         break; // No more jobs in queue
@@ -135,6 +150,20 @@ public class JobSchedulerService {
             job.setCompletedAt(LocalDateTime.now());
             job.setResult("Job completed successfully");
             jobService.updateJobStatus(job.getId(), JobStatus.COMPLETED);
+            
+            // Update dependency graph and get newly available jobs
+            List<Job> newlyReadyJobs = dependencyGraphService.updateJobCompletion(job.getId());
+            
+            // Add newly ready jobs to the priority queue
+            if (!newlyReadyJobs.isEmpty()) {
+                logger.info("Job {} completion unlocked {} new jobs for execution", 
+                           job.getJobId(), newlyReadyJobs.size());
+                
+                for (Job readyJob : newlyReadyJobs) {
+                    queueService.addJobToQueue(readyJob);
+                    logger.debug("Added job {} to queue (dependency satisfied)", readyJob.getJobId());
+                }
+            }
             
             // Update worker
             worker.removeCurrentJob(job.getId());
@@ -307,5 +336,68 @@ public class JobSchedulerService {
      */
     public Object getQueueStatistics() {
         return queueService.getQueueStatistics();
+    }
+    
+    /**
+     * Rebuild dependency graph periodically to ensure consistency
+     */
+    @Scheduled(fixedDelay = 300000) // Run every 5 minutes
+    public void rebuildDependencyGraph() {
+        try {
+            logger.debug("Rebuilding dependency graph for consistency...");
+            dependencyGraphService.buildDependencyGraph();
+            
+            // Validate graph integrity
+            List<String> validationErrors = dependencyGraphService.validateDependencyGraph();
+            if (!validationErrors.isEmpty()) {
+                logger.warn("Dependency graph validation found {} issues: {}", 
+                           validationErrors.size(), String.join(", ", validationErrors));
+            } else {
+                logger.debug("Dependency graph validation passed");
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error rebuilding dependency graph: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Process dependency-based execution plan periodically
+     */
+    @Scheduled(fixedDelay = 60000) // Run every minute
+    public void processDependencyExecutionPlan() {
+        try {
+            logger.debug("Processing dependency-based execution plan...");
+            
+            // Get current execution plan
+            List<List<Job>> executionPlan = dependencyGraphService.getExecutionPlan();
+            
+            if (executionPlan.isEmpty()) {
+                logger.debug("No jobs in execution plan");
+                return;
+            }
+            
+            // Process first batch (jobs with no dependencies)
+            List<Job> firstBatch = executionPlan.get(0);
+            int addedJobs = 0;
+            
+            for (Job job : firstBatch) {
+                // Check if job is already in queue or running
+                if (job.getStatus() == com.jobscheduler.model.Job.JobStatus.PENDING) {
+                    if (!queueService.isJobInQueue(job.getId())) {
+                        queueService.addJobToQueue(job);
+                        addedJobs++;
+                        logger.debug("Added job {} to queue from execution plan", job.getJobId());
+                    }
+                }
+            }
+            
+            if (addedJobs > 0) {
+                logger.info("Added {} jobs to queue from dependency execution plan", addedJobs);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error processing dependency execution plan: {}", e.getMessage());
+        }
     }
 }
