@@ -24,11 +24,28 @@ public class JobService {
     @Autowired
     private JobRepository jobRepository;
     
+    @Autowired
+    private RedisPriorityQueueService priorityQueueService;
+    
+    @Autowired
+    private RedisCacheService cacheService;
+    
     // Create a new job
     public Job createJob(Job job) {
         logger.info("Creating new job: {}", job.getName());
         job.setStatus(JobStatus.PENDING);
-        return jobRepository.save(job);
+        Job savedJob = jobRepository.save(job);
+        
+        // Add job to Redis priority queue with default priority
+        double priority = calculateJobPriority(savedJob);
+        priorityQueueService.addJobToPriorityQueue(savedJob.getId().toString(), priority);
+        
+        // Cache the job
+        cacheService.cacheJob(savedJob.getId().toString(), savedJob, 60); // Cache for 1 hour
+        cacheService.cacheJobStatus(savedJob.getId().toString(), savedJob.getStatus());
+        
+        logger.info("Created job {} and added to priority queue with priority {}", savedJob.getId(), priority);
+        return savedJob;
     }
     
     // Get all jobs with pagination
@@ -38,18 +55,59 @@ public class JobService {
     
     // Get job by ID
     public Optional<Job> getJobById(Long id) {
-        return jobRepository.findById(id);
+        String jobId = id.toString();
+        
+        // First try to get from cache
+        Job cachedJob = cacheService.getCachedJob(jobId);
+        if (cachedJob != null) {
+            logger.debug("Retrieved job {} from cache", id);
+            return Optional.of(cachedJob);
+        }
+        
+        // If not in cache, get from database and cache it
+        Optional<Job> jobOpt = jobRepository.findById(id);
+        if (jobOpt.isPresent()) {
+            Job job = jobOpt.get();
+            cacheService.cacheJob(jobId, job, 60); // Cache for 1 hour
+            logger.debug("Retrieved job {} from database and cached it", id);
+        }
+        
+        return jobOpt;
     }
     
     // Update job
     public Job updateJob(Job job) {
         logger.info("Updating job: {}", job.getId());
-        return jobRepository.save(job);
+        Job updatedJob = jobRepository.save(job);
+        
+        String jobId = updatedJob.getId().toString();
+        
+        // Update cache
+        cacheService.evictJobFromCache(jobId);
+        cacheService.cacheJob(jobId, updatedJob, 60);
+        cacheService.cacheJobStatus(jobId, updatedJob.getStatus());
+        
+        // Update priority queue if priority has changed
+        if (updatedJob.getStatus() == JobStatus.PENDING) {
+            double newPriority = calculateJobPriority(updatedJob);
+            priorityQueueService.updateJobPriority(jobId, newPriority);
+        }
+        
+        return updatedJob;
     }
     
     // Delete job
     public void deleteJob(Long id) {
         logger.info("Deleting job: {}", id);
+        String jobId = id.toString();
+        
+        // Remove from priority queue
+        priorityQueueService.removeJobFromQueue(jobId);
+        
+        // Remove from cache
+        cacheService.evictJobFromCache(jobId);
+        
+        // Delete from database
         jobRepository.deleteById(id);
     }
     
@@ -63,13 +121,37 @@ public class JobService {
         Optional<Job> jobOpt = jobRepository.findById(id);
         if (jobOpt.isPresent()) {
             Job job = jobOpt.get();
-            if (job.getStatus() == JobStatus.PENDING || job.getStatus() == JobStatus.SCHEDULED) {
-                job.setStatus(JobStatus.RUNNING);
-                job.setStartedAt(LocalDateTime.now());
-                logger.info("Started job: {}", job.getId());
-                return jobRepository.save(job);
-            } else {
-                throw new IllegalStateException("Job cannot be started from status: " + job.getStatus());
+            String jobId = job.getId().toString();
+            
+            // Try to acquire lock for job processing
+            if (!priorityQueueService.acquireJobLock(jobId, 300)) { // 5 minutes lock
+                throw new IllegalStateException("Job is currently being processed by another worker");
+            }
+            
+            try {
+                if (job.getStatus() == JobStatus.PENDING || job.getStatus() == JobStatus.SCHEDULED) {
+                    job.setStatus(JobStatus.RUNNING);
+                    job.setStartedAt(LocalDateTime.now());
+                    
+                    Job updatedJob = jobRepository.save(job);
+                    
+                    // Update cache and remove from priority queue
+                    cacheService.cacheJob(jobId, updatedJob, 60);
+                    cacheService.cacheJobStatus(jobId, JobStatus.RUNNING);
+                    priorityQueueService.removeJobFromQueue(jobId);
+                    
+                    // Record execution metrics
+                    cacheService.incrementJobExecutionCount(jobId);
+                    
+                    logger.info("Started job: {}", job.getId());
+                    return updatedJob;
+                } else {
+                    priorityQueueService.releaseJobLock(jobId);
+                    throw new IllegalStateException("Job cannot be started from status: " + job.getStatus());
+                }
+            } catch (Exception e) {
+                priorityQueueService.releaseJobLock(jobId);
+                throw e;
             }
         }
         throw new RuntimeException("Job not found: " + id);
@@ -80,11 +162,32 @@ public class JobService {
         Optional<Job> jobOpt = jobRepository.findById(id);
         if (jobOpt.isPresent()) {
             Job job = jobOpt.get();
+            String jobId = job.getId().toString();
+            
             if (job.getStatus() == JobStatus.RUNNING) {
+                LocalDateTime startTime = job.getStartedAt();
+                LocalDateTime endTime = LocalDateTime.now();
+                
                 job.setStatus(JobStatus.COMPLETED);
-                job.setCompletedAt(LocalDateTime.now());
+                job.setCompletedAt(endTime);
+                
+                Job updatedJob = jobRepository.save(job);
+                
+                // Update cache and metrics
+                cacheService.cacheJob(jobId, updatedJob, 60);
+                cacheService.cacheJobStatus(jobId, JobStatus.COMPLETED);
+                
+                // Record execution time if start time is available
+                if (startTime != null) {
+                    long executionTimeMs = java.time.Duration.between(startTime, endTime).toMillis();
+                    cacheService.recordJobExecutionTime(jobId, executionTimeMs);
+                }
+                
+                // Release job lock
+                priorityQueueService.releaseJobLock(jobId);
+                
                 logger.info("Completed job: {}", job.getId());
-                return jobRepository.save(job);
+                return updatedJob;
             } else {
                 throw new IllegalStateException("Job cannot be completed from status: " + job.getStatus());
             }
@@ -97,12 +200,32 @@ public class JobService {
         Optional<Job> jobOpt = jobRepository.findById(id);
         if (jobOpt.isPresent()) {
             Job job = jobOpt.get();
+            String jobId = job.getId().toString();
+            
             job.setStatus(JobStatus.FAILED);
             job.setErrorMessage(errorMessage);
             job.setCompletedAt(LocalDateTime.now());
             job.setRetryCount(job.getRetryCount() + 1);
+            
+            Job updatedJob = jobRepository.save(job);
+            
+            // Update cache
+            cacheService.cacheJob(jobId, updatedJob, 60);
+            cacheService.cacheJobStatus(jobId, JobStatus.FAILED);
+            
+            // Release job lock
+            priorityQueueService.releaseJobLock(jobId);
+            
+            // If job can be retried, add back to priority queue with lower priority
+            if (job.getRetryCount() < job.getMaxRetries()) {
+                double retryPriority = calculateJobPriority(updatedJob) - (job.getRetryCount() * 10);
+                priorityQueueService.addJobToPriorityQueue(jobId, retryPriority);
+                logger.info("Job {} failed but will be retried. Retry count: {}/{}", 
+                    job.getId(), job.getRetryCount(), job.getMaxRetries());
+            }
+            
             logger.error("Failed job: {} - {}", job.getId(), errorMessage);
-            return jobRepository.save(job);
+            return updatedJob;
         }
         throw new RuntimeException("Job not found: " + id);
     }
@@ -112,11 +235,24 @@ public class JobService {
         Optional<Job> jobOpt = jobRepository.findById(id);
         if (jobOpt.isPresent()) {
             Job job = jobOpt.get();
+            String jobId = job.getId().toString();
+            
             if (job.getStatus() == JobStatus.PENDING || job.getStatus() == JobStatus.RUNNING || job.getStatus() == JobStatus.SCHEDULED) {
                 job.setStatus(JobStatus.CANCELLED);
                 job.setCompletedAt(LocalDateTime.now());
+                
+                Job updatedJob = jobRepository.save(job);
+                
+                // Update cache and remove from priority queue
+                cacheService.cacheJob(jobId, updatedJob, 60);
+                cacheService.cacheJobStatus(jobId, JobStatus.CANCELLED);
+                priorityQueueService.removeJobFromQueue(jobId);
+                
+                // Release job lock if it was acquired
+                priorityQueueService.releaseJobLock(jobId);
+                
                 logger.info("Cancelled job: {}", job.getId());
-                return jobRepository.save(job);
+                return updatedJob;
             } else {
                 throw new IllegalStateException("Job cannot be cancelled from status: " + job.getStatus());
             }
@@ -151,6 +287,79 @@ public class JobService {
     // Search jobs by name
     public List<Job> searchJobsByName(String name) {
         return jobRepository.findByNameContainingIgnoreCase(name);
+    }
+    
+    // Get next job from priority queue
+    public Job getNextJobFromQueue() {
+        String jobId = priorityQueueService.pollHighestPriorityJob();
+        if (jobId != null) {
+            try {
+                Long id = Long.parseLong(jobId);
+                Optional<Job> jobOpt = getJobById(id);
+                if (jobOpt.isPresent()) {
+                    Job job = jobOpt.get();
+                    if (job.getStatus() == JobStatus.PENDING) {
+                        logger.info("Retrieved next job from queue: {}", jobId);
+                        return job;
+                    } else {
+                        logger.warn("Job {} from queue is not in PENDING status: {}", jobId, job.getStatus());
+                    }
+                }
+            } catch (NumberFormatException e) {
+                logger.error("Invalid job ID format in queue: {}", jobId, e);
+            }
+        }
+        return null;
+    }
+    
+    // Get queue size
+    public long getQueueSize() {
+        return priorityQueueService.getQueueSize();
+    }
+    
+    // Get active workers count
+    public int getActiveWorkersCount() {
+        return cacheService.getActiveWorkers(5).size(); // 5 minutes timeout
+    }
+    
+    // Check Redis availability
+    public boolean isRedisAvailable() {
+        return cacheService.isRedisAvailable();
+    }
+    
+    // Calculate job priority based on various factors
+    private double calculateJobPriority(Job job) {
+        double basePriority = 100.0;
+        
+        // Higher priority for older jobs (prevent starvation)
+        if (job.getCreatedAt() != null) {
+            long hoursOld = java.time.Duration.between(job.getCreatedAt(), LocalDateTime.now()).toHours();
+            basePriority += hoursOld; // Add 1 point per hour
+        }
+        
+        // Adjust priority based on retry count (lower priority for retries)
+        if (job.getRetryCount() != null && job.getRetryCount() > 0) {
+            basePriority -= (job.getRetryCount() * 20);
+        }
+        
+        // Adjust priority based on job type if specified
+        if (job.getJobType() != null) {
+            switch (job.getJobType().toLowerCase()) {
+                case "critical":
+                case "high":
+                    basePriority += 50;
+                    break;
+                case "low":
+                    basePriority -= 30;
+                    break;
+                default:
+                    // Normal priority, no adjustment
+                    break;
+            }
+        }
+        
+        // Ensure priority is never negative
+        return Math.max(basePriority, 1.0);
     }
     
     // Inner class for job statistics
