@@ -26,9 +26,10 @@ public class DependencyGraphService {
     private JobRepository jobRepository;
     
     @Autowired
-    private JobDependencyRepository dependencyRepository;
+    private DependencyGraphService dependencyGraphService;
     
     @Autowired
+    private DeadlockDetectionService deadlockDetectionService;    @Autowired
     private JobService jobService;
     
     // In-memory cache for adjacency list representation
@@ -79,34 +80,42 @@ public class DependencyGraphService {
     }
     
     /**
-     * Add a dependency between two jobs
+     * Add a dependency between two jobs with advanced deadlock detection
      * @param childJobId The job that depends on another (child)
      * @param parentJobId The job that this job depends on (parent)
      * @return true if dependency was added successfully
      */
     public boolean addDependency(Long childJobId, Long parentJobId) {
-        logger.info("Adding dependency: job {} depends on job {}", childJobId, parentJobId);
-        
-        // Check if this would create a cycle
-        if (wouldCreateCycle(childJobId, parentJobId)) {
-            logger.warn("Cannot add dependency: would create cycle between {} and {}", 
-                       childJobId, parentJobId);
-            return false;
-        }
-        
-        // Check if jobs exist
-        if (!jobRepository.existsById(childJobId) || !jobRepository.existsById(parentJobId)) {
-            logger.warn("Cannot add dependency: one or both jobs do not exist");
-            return false;
-        }
-        
-        // Check if dependency already exists
-        if (dependencyRepository.existsByJobIdAndDependencyJobId(childJobId, parentJobId)) {
-            logger.info("Dependency already exists between {} and {}", childJobId, parentJobId);
-            return true;
-        }
+        logger.info("Adding dependency with deadlock validation: job {} depends on job {}", childJobId, parentJobId);
         
         try {
+            // Advanced validation using deadlock detection service
+            var validationResult = deadlockDetectionService.validateDependencyAddition(childJobId, parentJobId);
+            
+            if (!validationResult.isValid()) {
+                logger.warn("Cannot add dependency: {}", validationResult.getMessage());
+                return false;
+            }
+            
+            // Log warnings if any
+            if (validationResult.hasWarnings()) {
+                for (String warning : validationResult.getWarnings()) {
+                    logger.warn("Dependency warning: {}", warning);
+                }
+            }
+            
+            // Check if jobs exist
+            if (!jobRepository.existsById(childJobId) || !jobRepository.existsById(parentJobId)) {
+                logger.warn("Cannot add dependency: one or both jobs do not exist");
+                return false;
+            }
+            
+            // Check if dependency already exists
+            if (dependencyRepository.existsByJobIdAndDependencyJobId(childJobId, parentJobId)) {
+                logger.info("Dependency already exists between {} and {}", childJobId, parentJobId);
+                return true;
+            }
+            
             // Create dependency in database
             JobDependency dependency = new JobDependency();
             dependency.setJobId(childJobId);
@@ -120,6 +129,15 @@ public class DependencyGraphService {
                 adjacencyList.computeIfAbsent(parentJobId, k -> new HashSet<>()).add(childJobId);
                 reverseAdjacencyList.computeIfAbsent(childJobId, k -> new HashSet<>()).add(parentJobId);
                 inDegreeMap.put(childJobId, inDegreeMap.getOrDefault(childJobId, 0) + 1);
+            }
+            
+            // Perform post-addition validation
+            var postValidation = deadlockDetectionService.detectDeadlocks();
+            if (postValidation.hasDeadlock()) {
+                logger.error("Deadlock detected after adding dependency! Rolling back...");
+                // Rollback the dependency
+                removeDependency(childJobId, parentJobId);
+                return false;
             }
             
             logger.info("Successfully added dependency: {} -> {}", parentJobId, childJobId);
