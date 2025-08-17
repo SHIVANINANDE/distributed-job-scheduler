@@ -6,7 +6,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create ENUM types
 CREATE TYPE job_status AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'SCHEDULED');
 CREATE TYPE node_status AS ENUM ('ACTIVE', 'INACTIVE', 'MAINTENANCE', 'FAILED');
-CREATE TYPE dependency_type AS ENUM ('SEQUENTIAL', 'PARALLEL', 'CONDITIONAL');
+CREATE TYPE worker_status AS ENUM ('ACTIVE', 'INACTIVE', 'BUSY', 'ERROR', 'MAINTENANCE');
+CREATE TYPE dependency_type AS ENUM ('MUST_COMPLETE', 'MUST_START', 'MUST_SUCCEED', 'CONDITIONAL');
 
 -- Jobs table
 CREATE TABLE IF NOT EXISTS jobs (
@@ -15,28 +16,109 @@ CREATE TABLE IF NOT EXISTS jobs (
     description TEXT,
     job_type VARCHAR(255),
     status job_status NOT NULL DEFAULT 'PENDING',
+    priority INTEGER NOT NULL DEFAULT 100,
     parameters TEXT, -- JSON string for job parameters
     max_retries INTEGER DEFAULT 3,
     retry_count INTEGER DEFAULT 0,
-    priority INTEGER DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     scheduled_at TIMESTAMP,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     error_message TEXT,
+    
+    -- Duration fields
+    estimated_duration_minutes BIGINT,
+    actual_duration_minutes BIGINT,
+    
+    -- Worker assignment fields
+    assigned_worker_id VARCHAR(255),
+    assigned_worker_name VARCHAR(255),
+    worker_assigned_at TIMESTAMP,
+    worker_started_at TIMESTAMP,
+    worker_host VARCHAR(255),
+    worker_port INTEGER,
+    
+    -- Legacy fields for backward compatibility
     worker_node_id BIGINT,
     created_by VARCHAR(255),
     tags TEXT[], -- Array of tags for job categorization
     timeout_seconds INTEGER DEFAULT 3600,
     
-    -- Indexes
+    -- Constraints
     CONSTRAINT chk_retry_count CHECK (retry_count >= 0),
     CONSTRAINT chk_max_retries CHECK (max_retries >= 0),
-    CONSTRAINT chk_priority CHECK (priority >= 0)
+    CONSTRAINT chk_priority CHECK (priority >= 1)
 );
 
--- Worker Nodes table
+-- Workers table (enhanced worker management)
+CREATE TABLE IF NOT EXISTS workers (
+    id BIGSERIAL PRIMARY KEY,
+    worker_id VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    status worker_status NOT NULL DEFAULT 'INACTIVE',
+    host_name VARCHAR(255),
+    host_address VARCHAR(255),
+    port INTEGER,
+    max_concurrent_jobs INTEGER DEFAULT 1,
+    current_job_count INTEGER DEFAULT 0,
+    total_jobs_processed BIGINT DEFAULT 0,
+    total_jobs_successful BIGINT DEFAULT 0,
+    total_jobs_failed BIGINT DEFAULT 0,
+    last_heartbeat TIMESTAMP,
+    last_job_completed TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version VARCHAR(255),
+    capabilities TEXT, -- JSON string of worker capabilities
+    tags TEXT, -- JSON array of tags for job matching
+    
+    -- Constraints
+    CONSTRAINT chk_max_concurrent_jobs CHECK (max_concurrent_jobs > 0),
+    CONSTRAINT chk_current_job_count CHECK (current_job_count >= 0),
+    CONSTRAINT chk_total_jobs_processed CHECK (total_jobs_processed >= 0),
+    CONSTRAINT chk_total_jobs_successful CHECK (total_jobs_successful >= 0),
+    CONSTRAINT chk_total_jobs_failed CHECK (total_jobs_failed >= 0)
+);
+
+-- Job Dependencies table (enhanced with collection table support)
+CREATE TABLE IF NOT EXISTS job_dependencies (
+    job_id BIGINT NOT NULL,
+    dependency_job_id BIGINT NOT NULL,
+    
+    -- Foreign key constraints
+    CONSTRAINT fk_job_dependencies_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_job_dependencies_dependency FOREIGN KEY (dependency_job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    
+    -- Prevent self-dependency
+    CONSTRAINT chk_no_self_dependency CHECK (job_id != dependency_job_id),
+    
+    -- Primary key on both columns
+    PRIMARY KEY (job_id, dependency_job_id)
+);
+
+-- Enhanced Job Dependencies table with detailed tracking
+CREATE TABLE IF NOT EXISTS job_dependency_tracking (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    dependency_job_id BIGINT NOT NULL,
+    dependency_type dependency_type NOT NULL DEFAULT 'MUST_COMPLETE',
+    is_satisfied BOOLEAN NOT NULL DEFAULT FALSE,
+    satisfied_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key constraints
+    CONSTRAINT fk_dependency_tracking_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_dependency_tracking_dependency FOREIGN KEY (dependency_job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    
+    -- Prevent self-dependency
+    CONSTRAINT chk_no_self_dependency_tracking CHECK (job_id != dependency_job_id),
+    
+    -- Unique constraint to prevent duplicate dependencies
+    CONSTRAINT uk_job_dependency_tracking UNIQUE (job_id, dependency_job_id)
+);
+
+-- Worker Nodes table (legacy - for backward compatibility)
 CREATE TABLE IF NOT EXISTS worker_nodes (
     id BIGSERIAL PRIMARY KEY,
     node_name VARCHAR(255) NOT NULL UNIQUE,
@@ -56,31 +138,9 @@ CREATE TABLE IF NOT EXISTS worker_nodes (
     -- Constraints
     CONSTRAINT chk_cpu_cores CHECK (cpu_cores > 0),
     CONSTRAINT chk_memory_gb CHECK (memory_gb > 0),
-    CONSTRAINT chk_max_concurrent_jobs CHECK (max_concurrent_jobs > 0),
-    CONSTRAINT chk_current_job_count CHECK (current_job_count >= 0)
+    CONSTRAINT chk_max_concurrent_jobs_nodes CHECK (max_concurrent_jobs > 0),
+    CONSTRAINT chk_current_job_count_nodes CHECK (current_job_count >= 0)
 );
-
--- Job Dependencies table
-CREATE TABLE IF NOT EXISTS job_dependencies (
-    id BIGSERIAL PRIMARY KEY,
-    parent_job_id BIGINT NOT NULL,
-    dependent_job_id BIGINT NOT NULL,
-    dependency_type dependency_type NOT NULL DEFAULT 'SEQUENTIAL',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    condition_expression TEXT, -- Optional condition for conditional dependencies
-    
-    -- Foreign key constraints
-    CONSTRAINT fk_parent_job FOREIGN KEY (parent_job_id) REFERENCES jobs(id) ON DELETE CASCADE,
-    CONSTRAINT fk_dependent_job FOREIGN KEY (dependent_job_id) REFERENCES jobs(id) ON DELETE CASCADE,
-    
-    -- Prevent self-dependency
-    CONSTRAINT chk_no_self_dependency CHECK (parent_job_id != dependent_job_id),
-    
-    -- Unique constraint to prevent duplicate dependencies
-    CONSTRAINT uk_job_dependency UNIQUE (parent_job_id, dependent_job_id)
-);
-
--- Job Execution History table
 CREATE TABLE IF NOT EXISTS job_execution_history (
     id BIGSERIAL PRIMARY KEY,
     job_id BIGINT NOT NULL,
@@ -128,7 +188,7 @@ CREATE TABLE IF NOT EXISTS job_schedules (
     CONSTRAINT fk_schedule_job FOREIGN KEY (job_template_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
 
--- Add foreign key constraint to jobs table for worker_node_id
+-- Add foreign key constraints
 ALTER TABLE jobs ADD CONSTRAINT fk_job_worker_node 
 FOREIGN KEY (worker_node_id) REFERENCES worker_nodes(id) ON DELETE SET NULL;
 
@@ -138,14 +198,26 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_at ON jobs(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_priority ON jobs(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_worker_node ON jobs(worker_node_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_assigned_worker ON jobs(assigned_worker_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_tags ON jobs USING gin(tags);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON jobs(status, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_estimated_duration ON jobs(estimated_duration_minutes);
+
+CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status);
+CREATE INDEX IF NOT EXISTS idx_workers_worker_id ON workers(worker_id);
+CREATE INDEX IF NOT EXISTS idx_workers_last_heartbeat ON workers(last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_workers_host_address ON workers(host_address);
 
 CREATE INDEX IF NOT EXISTS idx_worker_nodes_status ON worker_nodes(status);
 CREATE INDEX IF NOT EXISTS idx_worker_nodes_last_heartbeat ON worker_nodes(last_heartbeat);
 CREATE INDEX IF NOT EXISTS idx_worker_nodes_capabilities ON worker_nodes USING gin(capabilities);
 
-CREATE INDEX IF NOT EXISTS idx_job_dependencies_parent ON job_dependencies(parent_job_id);
-CREATE INDEX IF NOT EXISTS idx_job_dependencies_dependent ON job_dependencies(dependent_job_id);
+CREATE INDEX IF NOT EXISTS idx_job_dependencies_job_id ON job_dependencies(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_dependencies_dependency_id ON job_dependencies(dependency_job_id);
+
+CREATE INDEX IF NOT EXISTS idx_job_dependency_tracking_job_id ON job_dependency_tracking(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_dependency_tracking_dependency_id ON job_dependency_tracking(dependency_job_id);
+CREATE INDEX IF NOT EXISTS idx_job_dependency_tracking_satisfied ON job_dependency_tracking(is_satisfied);
 
 CREATE INDEX IF NOT EXISTS idx_job_execution_history_job_id ON job_execution_history(job_id);
 CREATE INDEX IF NOT EXISTS idx_job_execution_history_worker_id ON job_execution_history(worker_node_id);
@@ -167,6 +239,9 @@ END;
 $$ language 'plpgsql';
 
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_workers_updated_at BEFORE UPDATE ON workers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_worker_nodes_updated_at BEFORE UPDATE ON worker_nodes
