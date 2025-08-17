@@ -361,4 +361,16 @@ public class WorkerService {
         public double getAverageLoad() { return averageLoad; }
         public long getTotalJobsProcessed() { return totalJobsProcessed; }
     }
+    
+    // Get available workers (ACTIVE status with available capacity)
+    public List<Worker> getAvailableWorkers() {
+        return workerRepository.findByStatusAndMaxConcurrentJobsGreaterThanCurrentJobCount(
+            Worker.WorkerStatus.ACTIVE);
+    }
+    
+    // Get unhealthy workers (no recent heartbeat)
+    public List<Worker> getUnhealthyWorkers() {
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(5); // 5 minutes threshold
+        return workerRepository.findByLastHeartbeatBefore(threshold);
+    }
 }

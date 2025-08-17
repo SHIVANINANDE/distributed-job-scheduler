@@ -128,4 +128,10 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     // Count jobs by status for a specific worker
     @Query("SELECT j.status, COUNT(j) FROM Job j WHERE j.assignedWorkerId = :workerId GROUP BY j.status")
     List<Object[]> countJobsByStatusForWorker(@Param("workerId") String workerId);
+    
+    // Find scheduled jobs due for execution
+    List<Job> findByStatusAndScheduledAtLessThanEqual(JobStatus status, LocalDateTime dateTime);
+    
+    // Find jobs by assigned worker
+    List<Job> findByAssignedWorker(String workerId);
 }

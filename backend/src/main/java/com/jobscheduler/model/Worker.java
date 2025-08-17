@@ -477,6 +477,76 @@ public class Worker {
                 '}';
     }
     
+    // Check if worker has available capacity
+    public boolean hasAvailableCapacity() {
+        return isActive() && currentJobCount != null && maxConcurrentJobs != null && 
+               currentJobCount < maxConcurrentJobs;
+    }
+    
+    // Add a job to current jobs
+    public void addCurrentJob(Long jobId) {
+        if (currentJobIds == null) {
+            currentJobIds = new ArrayList<>();
+        }
+        if (!currentJobIds.contains(jobId)) {
+            currentJobIds.add(jobId);
+            if (currentJobCount == null) {
+                currentJobCount = 0;
+            }
+            currentJobCount++;
+            updateAvailableCapacity();
+        }
+    }
+    
+    // Remove a job from current jobs
+    public void removeCurrentJob(Long jobId) {
+        if (currentJobIds != null && currentJobIds.contains(jobId)) {
+            currentJobIds.remove(jobId);
+            if (currentJobCount != null && currentJobCount > 0) {
+                currentJobCount--;
+            }
+            updateAvailableCapacity();
+        }
+    }
+    
+    // Get current job IDs list
+    public List<Long> getCurrentJobIds() {
+        return currentJobIds != null ? new ArrayList<>(currentJobIds) : new ArrayList<>();
+    }
+    
+    // Clear all current jobs
+    public void clearCurrentJobs() {
+        if (currentJobIds != null) {
+            currentJobIds.clear();
+        }
+        currentJobCount = 0;
+        updateAvailableCapacity();
+    }
+    
+    // Increment successful jobs counter
+    public void incrementSuccessfulJobs() {
+        if (totalJobsSuccessful == null) {
+            totalJobsSuccessful = 0L;
+        }
+        if (totalJobsProcessed == null) {
+            totalJobsProcessed = 0L;
+        }
+        totalJobsSuccessful++;
+        totalJobsProcessed++;
+    }
+    
+    // Increment failed jobs counter
+    public void incrementFailedJobs() {
+        if (totalJobsFailed == null) {
+            totalJobsFailed = 0L;
+        }
+        if (totalJobsProcessed == null) {
+            totalJobsProcessed = 0L;
+        }
+        totalJobsFailed++;
+        totalJobsProcessed++;
+    }
+    
     // Worker Status Enum
     public enum WorkerStatus {
         ACTIVE("Active"),

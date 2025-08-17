@@ -25,7 +25,7 @@ public class JobService {
     private JobRepository jobRepository;
     
     @Autowired
-    private RedisPriorityQueueService priorityQueueService;
+    private JobPriorityQueueService priorityQueueService;
     
     @Autowired
     private RedisCacheService cacheService;
@@ -33,18 +33,35 @@ public class JobService {
     // Create a new job
     public Job createJob(Job job) {
         logger.info("Creating new job: {}", job.getName());
-        job.setStatus(JobStatus.PENDING);
+        if (job.getStatus() == null) {
+            job.setStatus(JobStatus.PENDING);
+        }
+        if (job.getCreatedAt() == null) {
+            job.setCreatedAt(LocalDateTime.now());
+        }
+        
         Job savedJob = jobRepository.save(job);
         
-        // Add job to Redis priority queue with default priority
-        double priority = calculateJobPriority(savedJob);
-        priorityQueueService.addJobToPriorityQueue(savedJob.getId().toString(), priority);
+        // Add job to Redis priority queue
+        try {
+            boolean added = priorityQueueService.addJobToQueue(savedJob);
+            if (added) {
+                logger.info("Job {} added to priority queue successfully", savedJob.getJobId());
+            } else {
+                logger.warn("Failed to add job {} to priority queue", savedJob.getJobId());
+            }
+        } catch (Exception e) {
+            logger.warn("Error adding job {} to priority queue: {}", savedJob.getJobId(), e.getMessage());
+        }
         
         // Cache the job
-        cacheService.cacheJob(savedJob.getId().toString(), savedJob, 60); // Cache for 1 hour
-        cacheService.cacheJobStatus(savedJob.getId().toString(), savedJob.getStatus());
+        try {
+            cacheService.cacheJob(savedJob.getId().toString(), savedJob, 3600); // Cache for 1 hour
+        } catch (Exception e) {
+            logger.warn("Failed to cache job {}: {}", savedJob.getJobId(), e.getMessage());
+        }
         
-        logger.info("Created job {} and added to priority queue with priority {}", savedJob.getId(), priority);
+        logger.info("Created job: {}", savedJob.getJobId());
         return savedJob;
     }
     
@@ -96,19 +113,71 @@ public class JobService {
         return updatedJob;
     }
     
+    // Update job status with queue management
+    public Job updateJobStatus(Long jobId, JobStatus newStatus) {
+        logger.info("Updating job {} status to {}", jobId, newStatus);
+        
+        Job job = getJobById(jobId);
+        if (job == null) {
+            throw new RuntimeException("Job not found: " + jobId);
+        }
+        
+        JobStatus oldStatus = job.getStatus();
+        job.setStatus(newStatus);
+        
+        // Update timestamps based on status
+        switch (newStatus) {
+            case QUEUED:
+                job.setQueuedAt(LocalDateTime.now());
+                break;
+            case RUNNING:
+                job.setStartedAt(LocalDateTime.now());
+                break;
+            case COMPLETED:
+                job.setCompletedAt(LocalDateTime.now());
+                priorityQueueService.moveJobToCompleted(job);
+                break;
+            case FAILED:
+                job.setCompletedAt(LocalDateTime.now());
+                priorityQueueService.moveJobToFailed(job);
+                break;
+        }
+        
+        Job updatedJob = jobRepository.save(job);
+        
+        // Update cache
+        try {
+            cacheService.evictJobFromCache(jobId.toString());
+            cacheService.cacheJob(jobId.toString(), updatedJob, 3600);
+        } catch (Exception e) {
+            logger.warn("Failed to update cache for job {}: {}", jobId, e.getMessage());
+        }
+        
+        logger.info("Updated job {} status from {} to {}", jobId, oldStatus, newStatus);
+        return updatedJob;
+    }
+    
     // Delete job
     public void deleteJob(Long id) {
         logger.info("Deleting job: {}", id);
-        String jobId = id.toString();
         
         // Remove from priority queue
-        priorityQueueService.removeJobFromQueue(jobId);
+        try {
+            priorityQueueService.removeJobFromQueue(id);
+        } catch (Exception e) {
+            logger.warn("Failed to remove job {} from queue: {}", id, e.getMessage());
+        }
         
         // Remove from cache
-        cacheService.evictJobFromCache(jobId);
+        try {
+            cacheService.evictJobFromCache(id.toString());
+        } catch (Exception e) {
+            logger.warn("Failed to evict job {} from cache: {}", id, e.getMessage());
+        }
         
         // Delete from database
         jobRepository.deleteById(id);
+        logger.info("Deleted job: {}", id);
     }
     
     // Get jobs by status
@@ -391,5 +460,33 @@ public class JobService {
         public long getFailedJobs() { return failedJobs; }
         public long getCancelledJobs() { return cancelledJobs; }
         public long getScheduledJobs() { return scheduledJobs; }
+    }
+    
+    // Get scheduled jobs due for execution
+    public List<Job> getScheduledJobsDueForExecution() {
+        LocalDateTime now = LocalDateTime.now();
+        return jobRepository.findByStatusAndScheduledAtLessThanEqual(JobStatus.SCHEDULED, now);
+    }
+    
+    // Get jobs by status
+    public List<Job> getJobsByStatus(JobStatus status) {
+        return jobRepository.findByStatus(status);
+    }
+    
+    // Get jobs by worker
+    public List<Job> getJobsByWorker(String workerId) {
+        return jobRepository.findByAssignedWorker(workerId);
+    }
+    
+    // Update job result
+    public Job updateJobResult(Long jobId, String result) {
+        Optional<Job> optionalJob = jobRepository.findById(jobId);
+        if (optionalJob.isPresent()) {
+            Job job = optionalJob.get();
+            job.setResult(result);
+            job.setCompletedAt(LocalDateTime.now());
+            return jobRepository.save(job);
+        }
+        throw new RuntimeException("Job not found: " + jobId);
     }
 }

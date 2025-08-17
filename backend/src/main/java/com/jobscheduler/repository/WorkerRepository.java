@@ -130,4 +130,15 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
      */
     @Query("SELECT DISTINCT w FROM Worker w WHERE w.currentJobIds IS NOT NULL")
     List<Worker> findWorkersAssignedToJobs(@Param("jobIds") List<Long> jobIds);
+    
+    /**
+     * Find available workers with capacity
+     */
+    @Query("SELECT w FROM Worker w WHERE w.status = 'ACTIVE' AND w.currentJobCount < w.maxConcurrentJobs")
+    List<Worker> findByStatusAndMaxConcurrentJobsGreaterThanCurrentJobCount(Worker.WorkerStatus status);
+    
+    /**
+     * Find workers with no recent heartbeat
+     */
+    List<Worker> findByLastHeartbeatBefore(LocalDateTime threshold);
 }
