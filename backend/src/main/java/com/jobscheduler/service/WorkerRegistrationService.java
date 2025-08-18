@@ -34,6 +34,12 @@ public class WorkerRegistrationService {
     @Autowired
     private CacheService cacheService;
 
+    @Autowired
+    private MetricsCollectionService metricsService;
+
+    @Autowired
+    private AuditLoggingService auditService;
+
     // Configuration constants
     private static final int DEFAULT_HEARTBEAT_TIMEOUT_MINUTES = 5;
     private static final int DEFAULT_FAILED_THRESHOLD_MINUTES = 10;
@@ -94,6 +100,11 @@ public class WorkerRegistrationService {
             // Save worker
             Worker savedWorker = workerRepository.save(worker);
 
+            // Record metrics and audit
+            metricsService.recordWorkerRegistration(savedWorker);
+            auditService.logWorkerEvent(savedWorker, AuditLoggingService.AuditEventType.WORKER_REGISTERED,
+                "Worker registered successfully with capacity: " + savedWorker.getMaxConcurrentJobs());
+
             // Initialize health tracking
             initializeWorkerHealthTracking(workerId);
 
@@ -112,6 +123,11 @@ public class WorkerRegistrationService {
         } catch (Exception e) {
             logger.error("Failed to register worker {}: {}", workerId, e.getMessage(), e);
             incrementRegistrationAttempt(workerId);
+            
+            // Record failed registration audit
+            auditService.logSystemEvent(AuditLoggingService.AuditEventType.ERROR_OCCURRED,
+                "WorkerRegistrationService", "Worker registration failed for workerId: " + workerId + ". Error: " + e.getMessage());
+            
             return new WorkerRegistrationResult(false, "Registration failed: " + e.getMessage(), null);
         }
     }
@@ -156,6 +172,12 @@ public class WorkerRegistrationService {
             // Save updated worker
             Worker savedWorker = workerRepository.save(worker);
 
+            // Record heartbeat metrics and audit
+            metricsService.recordWorkerHeartbeat(savedWorker);
+            auditService.logWorkerEvent(savedWorker, AuditLoggingService.AuditEventType.WORKER_HEARTBEAT,
+                "Worker heartbeat processed. Status: " + savedWorker.getStatus() + 
+                ", Capacity: " + savedWorker.getCurrentJobCount() + "/" + savedWorker.getMaxConcurrentJobs());
+
             // Update health tracking
             updateWorkerHealthStatus(workerId, request);
 
@@ -172,6 +194,10 @@ public class WorkerRegistrationService {
 
         } catch (Exception e) {
             logger.error("Failed to process heartbeat for worker {}: {}", workerId, e.getMessage(), e);
+            
+            // Record failed heartbeat audit
+            auditService.logSystemEvent(AuditLoggingService.AuditEventType.ERROR_OCCURRED,
+                "WorkerRegistrationService", "Worker heartbeat processing failed for workerId: " + workerId + ". Error: " + e.getMessage());
             return new HeartbeatResult(false, "Heartbeat processing failed: " + e.getMessage(), null);
         }
     }

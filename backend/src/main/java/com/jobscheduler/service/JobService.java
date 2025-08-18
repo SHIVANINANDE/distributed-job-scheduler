@@ -34,6 +34,12 @@ public class JobService {
     @Autowired
     private RedisCacheService cacheService;
     
+    @Autowired
+    private MetricsCollectionService metricsService;
+    
+    @Autowired
+    private AuditLoggingService auditService;
+    
     // Create a new job
     public Job createJob(Job job) {
         logger.info("Creating new job: {}", job.getName());
@@ -45,6 +51,11 @@ public class JobService {
         }
         
         Job savedJob = jobRepository.save(job);
+        
+        // Record metrics and audit
+        metricsService.recordJobSubmission(savedJob);
+        auditService.logJobExecution(savedJob, AuditLoggingService.AuditEventType.JOB_SUBMITTED, 
+            "Job created with priority " + savedJob.getPriority());
         
         // Add job to Redis priority queue
         try {
@@ -219,6 +230,11 @@ public class JobService {
                     
                     Job updatedJob = jobRepository.save(job);
                     
+                    // Record metrics and audit
+                    metricsService.recordJobStart(updatedJob);
+                    auditService.logJobExecution(updatedJob, AuditLoggingService.AuditEventType.JOB_STARTED,
+                        "Job started by worker: " + updatedJob.getAssignedWorkerId());
+                    
                     // Update cache and remove from priority queue
                     cacheService.cacheJob(jobId, updatedJob, 60);
                     cacheService.cacheJobStatus(jobId, JobStatus.RUNNING);
@@ -257,6 +273,12 @@ public class JobService {
                 
                 Job updatedJob = jobRepository.save(job);
                 
+                // Record metrics and audit
+                metricsService.recordJobCompletion(updatedJob);
+                auditService.logJobExecution(updatedJob, AuditLoggingService.AuditEventType.JOB_COMPLETED,
+                    "Job completed successfully. Execution time: " + 
+                    (startTime != null ? java.time.Duration.between(startTime, endTime).toMillis() + "ms" : "unknown"));
+                
                 // Update cache and metrics
                 cacheService.cacheJob(jobId, updatedJob, 60);
                 cacheService.cacheJobStatus(jobId, JobStatus.COMPLETED);
@@ -293,6 +315,11 @@ public class JobService {
             
             Job updatedJob = jobRepository.save(job);
             
+            // Record metrics and audit
+            metricsService.recordJobFailure(updatedJob, errorMessage);
+            auditService.logJobExecution(updatedJob, AuditLoggingService.AuditEventType.JOB_FAILED,
+                "Job failed with error: " + errorMessage + ". Retry count: " + updatedJob.getRetryCount());
+            
             // Update cache
             cacheService.cacheJob(jobId, updatedJob, 60);
             cacheService.cacheJobStatus(jobId, JobStatus.FAILED);
@@ -326,6 +353,11 @@ public class JobService {
                 job.setCompletedAt(LocalDateTime.now());
                 
                 Job updatedJob = jobRepository.save(job);
+                
+                // Record metrics and audit
+                metricsService.recordJobCancellation(updatedJob);
+                auditService.logJobExecution(updatedJob, AuditLoggingService.AuditEventType.JOB_CANCELLED,
+                    "Job cancelled by user request from status: " + job.getStatus());
                 
                 // Update cache and remove from priority queue
                 cacheService.cacheJob(jobId, updatedJob, 60);
