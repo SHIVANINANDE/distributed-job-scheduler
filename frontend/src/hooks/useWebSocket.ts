@@ -31,33 +31,23 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   const reconnectCount = useRef(0);
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Zustand store actions
-  const {
-    setWsConnected,
-    updateJob,
-    addJob,
-    updateWorker,
-    addWorker,
-    addRealtimeMetric,
-    setDashboardMetrics,
-  } = useJobStore();
-
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
+      const store = useJobStore.getState();
       
       switch (message.type) {
         case 'JOB_UPDATE':
           const jobData = message.data as Job;
           if (jobData.id) {
-            updateJob(jobData);
+            store.updateJob(jobData);
           }
           break;
           
         case 'WORKER_UPDATE':
           const workerData = message.data as Worker;
           if (workerData.workerId) {
-            updateWorker(workerData);
+            store.updateWorker(workerData);
           }
           break;
           
@@ -68,11 +58,11 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
               value: message.data.value,
               label: message.data.label,
             };
-            addRealtimeMetric(metric);
+            store.addRealtimeMetric(metric);
           }
           
           if (message.data.dashboardMetrics) {
-            setDashboardMetrics(message.data.dashboardMetrics);
+            store.setDashboardMetrics(message.data.dashboardMetrics);
           }
           break;
           
@@ -87,18 +77,18 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
     }
-  }, [updateJob, addJob, updateWorker, addWorker, addRealtimeMetric, setDashboardMetrics]);
+  }, []); // No dependencies
 
   const handleOpen = useCallback(() => {
     console.log('WebSocket connected');
-    setWsConnected(true);
+    useJobStore.getState().setWsConnected(true);
     reconnectCount.current = 0;
     onConnect?.();
-  }, [setWsConnected, onConnect]);
+  }, [onConnect]);
 
   const handleClose = useCallback(() => {
     console.log('WebSocket disconnected');
-    setWsConnected(false);
+    useJobStore.getState().setWsConnected(false);
     onDisconnect?.();
     
     // Attempt to reconnect
@@ -107,18 +97,29 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       console.log(`Attempting to reconnect... (${reconnectCount.current}/${maxReconnectAttempts})`);
       
       reconnectTimer.current = setTimeout(() => {
-        connect();
+        if (ws.current?.readyState !== WebSocket.OPEN) {
+          try {
+            ws.current = new WebSocket(url);
+            ws.current.onopen = handleOpen;
+            ws.current.onclose = handleClose;
+            ws.current.onerror = handleError;
+            ws.current.onmessage = handleMessage;
+          } catch (error) {
+            console.error('Failed to reconnect WebSocket:', error);
+          }
+        }
       }, reconnectInterval);
     } else {
       console.error('Max reconnection attempts reached');
     }
-  }, [setWsConnected, onDisconnect, maxReconnectAttempts, reconnectInterval]);
+  }, [url, maxReconnectAttempts, reconnectInterval, onDisconnect]);
 
   const handleError = useCallback((error: Event) => {
     console.error('WebSocket error:', error);
     onError?.(error);
   }, [onError]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       return;
@@ -133,7 +134,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     } catch (error) {
       console.error('Failed to create WebSocket connection:', error);
     }
-  }, [url, handleOpen, handleClose, handleError, handleMessage]);
+  }, [url]); // Only depend on URL
 
   const disconnect = useCallback(() => {
     if (reconnectTimer.current) {
@@ -146,8 +147,8 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       ws.current = null;
     }
     
-    setWsConnected(false);
-  }, [setWsConnected]);
+    useJobStore.getState().setWsConnected(false);
+  }, []);
 
   const sendMessage = useCallback((message: any) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
@@ -174,13 +175,39 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     });
   }, [sendMessage]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    connect();
+    // Initialize connection
+    const initConnection = () => {
+      if (ws.current?.readyState === WebSocket.OPEN) {
+        return;
+      }
+
+      try {
+        ws.current = new WebSocket(url);
+        ws.current.onopen = handleOpen;
+        ws.current.onclose = handleClose;
+        ws.current.onerror = handleError;
+        ws.current.onmessage = handleMessage;
+      } catch (error) {
+        console.error('Failed to create WebSocket connection:', error);
+      }
+    };
+
+    initConnection();
 
     return () => {
-      disconnect();
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      
+      if (ws.current) {
+        ws.current.close();
+        ws.current = null;
+      }
     };
-  }, [connect, disconnect]);
+  }, [url]); // Only depend on URL
 
   // Cleanup on unmount
   useEffect(() => {
@@ -208,7 +235,6 @@ export const useServerSentEvents = (options: { url?: string } = {}) => {
   } = options;
 
   const eventSource = useRef<EventSource | null>(null);
-  const { setWsConnected, updateJob, updateWorker, addRealtimeMetric } = useJobStore();
 
   const connect = useCallback(() => {
     if (eventSource.current) {
@@ -220,18 +246,18 @@ export const useServerSentEvents = (options: { url?: string } = {}) => {
 
       eventSource.current.onopen = () => {
         console.log('SSE connected');
-        setWsConnected(true);
+        useJobStore.getState().setWsConnected(true);
       };
 
       eventSource.current.onerror = (error) => {
         console.error('SSE error:', error);
-        setWsConnected(false);
+        useJobStore.getState().setWsConnected(false);
       };
 
       eventSource.current.addEventListener('job-update', (event) => {
         try {
           const job = JSON.parse(event.data);
-          updateJob(job);
+          useJobStore.getState().updateJob(job);
         } catch (error) {
           console.error('Error parsing job update:', error);
         }
@@ -240,7 +266,7 @@ export const useServerSentEvents = (options: { url?: string } = {}) => {
       eventSource.current.addEventListener('worker-update', (event) => {
         try {
           const worker = JSON.parse(event.data);
-          updateWorker(worker);
+          useJobStore.getState().updateWorker(worker);
         } catch (error) {
           console.error('Error parsing worker update:', error);
         }
@@ -249,7 +275,7 @@ export const useServerSentEvents = (options: { url?: string } = {}) => {
       eventSource.current.addEventListener('metrics-update', (event) => {
         try {
           const metric = JSON.parse(event.data);
-          addRealtimeMetric(metric);
+          useJobStore.getState().addRealtimeMetric(metric);
         } catch (error) {
           console.error('Error parsing metrics update:', error);
         }
@@ -258,20 +284,74 @@ export const useServerSentEvents = (options: { url?: string } = {}) => {
     } catch (error) {
       console.error('Failed to create SSE connection:', error);
     }
-  }, [url, setWsConnected, updateJob, updateWorker, addRealtimeMetric]);
+  }, [url]);
 
   const disconnect = useCallback(() => {
     if (eventSource.current) {
       eventSource.current.close();
       eventSource.current = null;
-      setWsConnected(false);
+      useJobStore.getState().setWsConnected(false);
     }
-  }, [setWsConnected]);
+  }, []);
 
   useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+    // Initialize SSE connection
+    if (eventSource.current) {
+      return;
+    }
+
+    try {
+      eventSource.current = new EventSource(url);
+
+      eventSource.current.onopen = () => {
+        console.log('SSE connected');
+        useJobStore.getState().setWsConnected(true);
+      };
+
+      eventSource.current.onerror = (error) => {
+        console.error('SSE error:', error);
+        useJobStore.getState().setWsConnected(false);
+      };
+
+      // Add event listeners
+      eventSource.current.addEventListener('job-update', (event) => {
+        try {
+          const job = JSON.parse(event.data);
+          useJobStore.getState().updateJob(job);
+        } catch (error) {
+          console.error('Error parsing job update:', error);
+        }
+      });
+
+      eventSource.current.addEventListener('worker-update', (event) => {
+        try {
+          const worker = JSON.parse(event.data);
+          useJobStore.getState().updateWorker(worker);
+        } catch (error) {
+          console.error('Error parsing worker update:', error);
+        }
+      });
+
+      eventSource.current.addEventListener('metrics-update', (event) => {
+        try {
+          const metric = JSON.parse(event.data);
+          useJobStore.getState().addRealtimeMetric(metric);
+        } catch (error) {
+          console.error('Error parsing metrics update:', error);
+        }
+      });
+
+    } catch (error) {
+      console.error('Failed to create SSE connection:', error);
+    }
+
+    return () => {
+      if (eventSource.current) {
+        eventSource.current.close();
+        eventSource.current = null;
+      }
+    };
+  }, [url]);
 
   return {
     connect,

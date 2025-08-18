@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Card,
   CardContent,
+  Container,
+  Tabs,
+  Tab,
+  Paper,
   Typography,
   CircularProgress,
   Alert,
@@ -18,6 +22,8 @@ import {
   Queue,
 } from '@mui/icons-material';
 import { useDashboardMetrics } from '../hooks/useApiQueries';
+import { SystemMonitoringDashboard } from '../components/Dashboard';
+import { JobCreationForm, JobList, JobDetailsWithHistory } from '../components/Jobs';
 
 const DashboardPage: React.FC = () => {
   const { data: metrics, isLoading, error } = useDashboardMetrics();
