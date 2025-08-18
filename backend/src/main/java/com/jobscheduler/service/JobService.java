@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -340,6 +342,42 @@ public class JobService {
             }
         }
         throw new RuntimeException("Job not found: " + id);
+    }
+    
+    // Get jobs by tag
+    public List<Job> getJobsByTag(String tag) {
+        logger.debug("Finding jobs by tag: {}", tag);
+        
+        try {
+            // Use custom query to find jobs containing the tag
+            List<Job> jobs = jobRepository.findAll().stream()
+                .filter(job -> job.getTags() != null && job.getTags().contains(tag))
+                .collect(Collectors.toList());
+            
+            logger.debug("Found {} jobs with tag: {}", jobs.size(), tag);
+            return jobs;
+            
+        } catch (Exception e) {
+            logger.error("Error finding jobs by tag {}: {}", tag, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+    
+    // Get job by jobId string
+    public Job getJobByJobId(String jobId) {
+        logger.debug("Finding job by jobId: {}", jobId);
+        
+        try {
+            Optional<Job> jobOpt = jobRepository.findAll().stream()
+                .filter(job -> jobId.equals(job.getJobIdentifier()))
+                .findFirst();
+            
+            return jobOpt.orElse(null);
+            
+        } catch (Exception e) {
+            logger.error("Error finding job by jobId {}: {}", jobId, e.getMessage());
+            return null;
+        }
     }
     
     // Get job statistics

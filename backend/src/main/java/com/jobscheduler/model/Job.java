@@ -98,6 +98,14 @@ public class Job {
     @Column(name = "worker_host")
     private String workerHost;
     
+    // Job identifier for batch processing and scheduling
+    @Column(name = "job_id", unique = true)
+    private String jobId;
+    
+    // Tags for categorizing and filtering jobs
+    @Column(name = "tags")
+    private String tags; // Comma-separated tags
+    
     @Column(name = "worker_port")
     private Integer workerPort;
     
@@ -408,6 +416,24 @@ public class Job {
             Duration duration = Duration.between(startedAt, completedAt);
             this.actualDurationMinutes = duration.toMinutes();
         }
+    }
+    
+    // Getter and setter for jobId
+    public String getJobIdentifier() {
+        return jobId;
+    }
+    
+    public void setJobId(String jobId) {
+        this.jobId = jobId;
+    }
+    
+    // Getter and setter for tags
+    public String getTags() {
+        return tags;
+    }
+    
+    public void setTags(String tags) {
+        this.tags = tags;
     }
     
     @Override

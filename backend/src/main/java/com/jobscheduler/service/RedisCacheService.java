@@ -1,5 +1,6 @@
 package com.jobscheduler.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscheduler.model.Job;
 import com.jobscheduler.model.JobStatus;
 import com.jobscheduler.model.Worker;
@@ -35,6 +36,9 @@ public class RedisCacheService implements CacheService {
     
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+    
+    @Autowired
+    private ObjectMapper objectMapper;
 
     /**
      * Cache a job object
@@ -757,5 +761,60 @@ public class RedisCacheService implements CacheService {
             logger.error("Error getting set size for key: {}", key, e);
             return 0L;
         }
+    }
+    
+    // Set cache entry with TTL
+    public void setCacheWithTTL(String key, Object value, long timeoutSeconds) {
+        try {
+            String jsonValue = objectMapper.writeValueAsString(value);
+            redisTemplate.opsForValue().set(key, jsonValue, Duration.ofSeconds(timeoutSeconds));
+            logger.debug("Set cache entry with TTL: {} (expires in {} seconds)", key, timeoutSeconds);
+        } catch (Exception e) {
+            logger.error("Error setting cache entry with TTL for key {}: {}", key, e.getMessage());
+        }
+    }
+    
+    // Check if key exists in cache
+    public boolean hasKey(String key) {
+        try {
+            return redisTemplate.hasKey(key);
+        } catch (Exception e) {
+            logger.error("Error checking cache key existence {}: {}", key, e.getMessage());
+            return false;
+        }
+    }
+    
+    // Get cache TTL
+    public long getTTL(String key) {
+        try {
+            return redisTemplate.getExpire(key);
+        } catch (Exception e) {
+            logger.error("Error getting TTL for key {}: {}", key, e.getMessage());
+            return -1;
+        }
+    }
+    
+    // Cache job batch results
+    public void cacheJobBatch(String batchId, Object batchResult, int timeoutSeconds) {
+        try {
+            String key = "batch:" + batchId;
+            setCacheWithTTL(key, batchResult, timeoutSeconds);
+        } catch (Exception e) {
+            logger.error("Error caching job batch {}: {}", batchId, e.getMessage());
+        }
+    }
+    
+    // Get cached job batch
+    public Object getCachedJobBatch(String batchId) {
+        try {
+            String key = "batch:" + batchId;
+            String value = (String) redisTemplate.opsForValue().get(key);
+            if (value != null) {
+                return objectMapper.readValue(value, Object.class);
+            }
+        } catch (Exception e) {
+            logger.error("Error getting cached job batch {}: {}", batchId, e.getMessage());
+        }
+        return null;
     }
 }

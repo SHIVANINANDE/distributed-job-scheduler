@@ -608,4 +608,11 @@ public class JobPriorityQueueService {
             return false;
         }
     }
+    
+    /**
+     * Add job to queue (alias for addJobToQueue for compatibility)
+     */
+    public boolean addJob(Job job) {
+        return addJobToQueue(job);
+    }
 }

@@ -404,6 +404,129 @@ public class JobDependencyService {
         logger.info("Removed {} dependencies for job {}", dependencies.size(), jobId);
     }
     
+    // Additional methods for advanced scheduling
+    
+    /**
+     * Add dependency using job IDs (compatibility method)
+     */
+    public JobDependency addDependency(String dependentJobId, String dependsOnJobId) {
+        logger.debug("Adding dependency: {} depends on {}", dependentJobId, dependsOnJobId);
+        
+        JobDependency dependency = new JobDependency();
+        dependency.setChildJobId(Long.parseLong(dependentJobId));
+        dependency.setParentJobId(Long.parseLong(dependsOnJobId));
+        dependency.setDependencyType(DependencyType.MUST_COMPLETE);
+        dependency.setFailureAction(FailureAction.BLOCK);
+        
+        return createJobDependency(dependency);
+    }
+    
+    /**
+     * Get job dependencies by dependent job ID
+     */
+    public List<JobDependency> getJobDependencies(String jobId) {
+        return getDependenciesForJob(Long.parseLong(jobId));
+    }
+    
+    /**
+     * Check if all dependencies are satisfied for a job
+     */
+    public boolean areDependenciesSatisfied(String jobId) {
+        return areDependenciesSatisfied(Long.parseLong(jobId));
+    }
+    
+    /**
+     * Get topological order of jobs (for batch processing)
+     */
+    public List<String> getTopologicalOrder(List<String> jobIds) {
+        logger.debug("Computing topological order for {} jobs", jobIds.size());
+        
+        try {
+            List<Long> longJobIds = jobIds.stream()
+                .map(Long::parseLong)
+                .collect(Collectors.toList());
+            
+            Map<Long, List<Long>> graph = new HashMap<>();
+            Map<Long, Integer> inDegree = new HashMap<>();
+            
+            // Build dependency graph
+            for (Long jobId : longJobIds) {
+                List<JobDependency> dependencies = getDependenciesForJob(jobId);
+                List<Long> dependsOn = dependencies.stream()
+                    .map(JobDependency::getParentJobId)
+                    .filter(longJobIds::contains)
+                    .collect(Collectors.toList());
+                
+                graph.put(jobId, dependsOn);
+                inDegree.put(jobId, dependsOn.size());
+            }
+            
+            // Topological sort using Kahn's algorithm
+            Queue<Long> queue = new LinkedList<>();
+            List<String> result = new ArrayList<>();
+            
+            // Find all jobs with no dependencies
+            for (Map.Entry<Long, Integer> entry : inDegree.entrySet()) {
+                if (entry.getValue() == 0) {
+                    queue.offer(entry.getKey());
+                }
+            }
+            
+            while (!queue.isEmpty()) {
+                Long currentJob = queue.poll();
+                result.add(currentJob.toString());
+                
+                // Update in-degree for dependent jobs
+                for (Long jobId : longJobIds) {
+                    if (graph.get(jobId).contains(currentJob)) {
+                        int newInDegree = inDegree.get(jobId) - 1;
+                        inDegree.put(jobId, newInDegree);
+                        
+                        if (newInDegree == 0) {
+                            queue.offer(jobId);
+                        }
+                    }
+                }
+            }
+            
+            if (result.size() != jobIds.size()) {
+                throw new IllegalStateException("Circular dependency detected in job batch");
+            }
+            
+            return result;
+            
+        } catch (Exception e) {
+            logger.error("Error computing topological order: {}", e.getMessage());
+            throw new RuntimeException("Failed to compute job execution order", e);
+        }
+    }
+    
+    /**
+     * Bulk add dependencies
+     */
+    public List<JobDependency> addBulkDependencies(List<JobDependency> dependencies) {
+        logger.debug("Adding {} dependencies in bulk", dependencies.size());
+        
+        List<JobDependency> savedDependencies = new ArrayList<>();
+        
+        for (JobDependency dependency : dependencies) {
+            try {
+                JobDependency saved = createJobDependency(dependency);
+                savedDependencies.add(saved);
+            } catch (Exception e) {
+                logger.warn("Failed to add dependency {} -> {}: {}", 
+                    dependency.getChildJobId(), 
+                    dependency.getParentJobId(), 
+                    e.getMessage());
+            }
+        }
+        
+        logger.info("Successfully added {} out of {} dependencies", 
+            savedDependencies.size(), dependencies.size());
+        
+        return savedDependencies;
+    }
+    
     // Inner class for dependency statistics
     public static class DependencyStatistics {
         private final long totalDependencies;
