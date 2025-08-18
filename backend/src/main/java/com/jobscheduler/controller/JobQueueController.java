@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1/queue")
+@RequestMapping("/api/queue")
 @CrossOrigin(origins = "*")
 public class JobQueueController {
     

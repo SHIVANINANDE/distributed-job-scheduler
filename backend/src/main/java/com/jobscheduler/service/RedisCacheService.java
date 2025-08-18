@@ -630,6 +630,19 @@ public class RedisCacheService implements CacheService {
         }
     }
     
+    /**
+     * Ping Redis to check connectivity
+     */
+    public void ping() {
+        try {
+            redisTemplate.getConnectionFactory().getConnection().ping();
+            logger.debug("Redis ping successful");
+        } catch (Exception e) {
+            logger.error("Redis ping failed", e);
+            throw new RuntimeException("Redis connection failed", e);
+        }
+    }
+    
     @Override
     public long getHitCount() {
         // Redis doesn't provide built-in hit count, return 0 for now

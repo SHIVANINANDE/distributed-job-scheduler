@@ -20,8 +20,8 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/v1/workers")
-@CrossOrigin(origins = "http://localhost:3000")
+@RequestMapping("/api/workers")
+@CrossOrigin(origins = "*")
 public class WorkerController {
     
     private static final Logger logger = LoggerFactory.getLogger(WorkerController.class);
