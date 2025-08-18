@@ -294,6 +294,10 @@ public class Job {
         this.assignedWorkerId = assignedWorkerId;
     }
     
+    public void setAssignedWorker(String workerId) {
+        setAssignedWorkerId(workerId);
+    }
+    
     public String getAssignedWorkerName() {
         return assignedWorkerName;
     }
@@ -335,6 +339,32 @@ public class Job {
     }
     
     // Utility methods
+    
+    public Long getJobId() {
+        return id;
+    }
+    
+    @Column(name = "result", columnDefinition = "TEXT")
+    private String result;
+    
+    @Column(name = "queued_at")
+    private LocalDateTime queuedAt;
+    
+    public String getResult() {
+        return result;
+    }
+    
+    public void setResult(String result) {
+        this.result = result;
+    }
+    
+    public LocalDateTime getQueuedAt() {
+        return queuedAt;
+    }
+    
+    public void setQueuedAt(LocalDateTime queuedAt) {
+        this.queuedAt = queuedAt;
+    }
     
     public boolean isAssignedToWorker() {
         return assignedWorkerId != null && !assignedWorkerId.trim().isEmpty();

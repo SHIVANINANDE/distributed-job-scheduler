@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Service
-public class RedisCacheService {
+public class RedisCacheService implements CacheService {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisCacheService.class);
     
@@ -533,5 +533,140 @@ public class RedisCacheService {
             return String.format("JobExecutionMetrics{executionCount=%d, lastExecutionTimeMs=%d}", 
                     executionCount, lastExecutionTimeMs);
         }
+    }
+    
+    // Implement missing CacheService interface methods
+    
+    @Override
+    public void put(String key, Object value) {
+        put(key, value, 3600); // Default 1 hour TTL
+    }
+    
+    @Override
+    public void put(String key, Object value, long ttlSeconds) {
+        try {
+            redisTemplate.opsForValue().set(key, value, ttlSeconds, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.error("Failed to put {} to cache", key, e);
+        }
+    }
+    
+    @Override
+    public <T> java.util.Optional<T> get(String key, Class<T> type) {
+        try {
+            Object value = redisTemplate.opsForValue().get(key);
+            if (value != null && type.isInstance(value)) {
+                return java.util.Optional.of(type.cast(value));
+            }
+        } catch (Exception e) {
+            logger.error("Failed to get {} from cache", key, e);
+        }
+        return java.util.Optional.empty();
+    }
+    
+    @Override
+    public void evict(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            logger.error("Failed to evict {} from cache", key, e);
+        }
+    }
+    
+    @Override
+    public void evictPattern(String pattern) {
+        try {
+            Set<String> keys = redisTemplate.keys(pattern);
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to evict pattern {} from cache", pattern, e);
+        }
+    }
+    
+    @Override
+    public void clear() {
+        try {
+            redisTemplate.getConnectionFactory().getConnection().flushAll();
+        } catch (Exception e) {
+            logger.error("Failed to clear cache", e);
+        }
+    }
+    
+    @Override
+    public void cacheJob(String jobId, Object job) {
+        cacheJob(jobId, (Job) job, 60); // Default 60 minutes TTL
+    }
+    
+    @Override
+    public void evictJob(String jobId) {
+        evictJobFromCache(jobId);
+    }
+    
+    @Override
+    public void cacheWorker(String workerId, Object worker) {
+        cacheWorker(workerId, (Worker) worker, 300L); // Call the existing method with explicit long
+    }
+    
+    @Override
+    public void cacheWorker(String workerId, Object worker, int ttlMinutes) {
+        cacheWorker(workerId, (Worker) worker, (long) ttlMinutes); // Cast to long to match existing method
+    }
+    
+    @Override
+    public void evictWorker(String workerId) {
+        evictWorkerFromCache(workerId); // Use existing method
+    }
+    
+    @Override
+    public boolean isAvailable() {
+        try {
+            redisTemplate.getConnectionFactory().getConnection().ping();
+            return true;
+        } catch (Exception e) {
+            logger.error("Redis cache is not available", e);
+            return false;
+        }
+    }
+    
+    @Override
+    public long getHitCount() {
+        // Redis doesn't provide built-in hit count, return 0 for now
+        return 0L;
+    }
+    
+    @Override
+    public long getMissCount() {
+        // Redis doesn't provide built-in miss count, return 0 for now
+        return 0L;
+    }
+    
+    @Override
+    public double getHitRatio() {
+        // Redis doesn't provide built-in hit ratio, return 0.0 for now
+        return 0.0;
+    }
+    
+    @Override
+    public void refreshCache() {
+        // For Redis, this could involve reloading data, but we'll keep it simple
+        logger.info("Cache refresh requested - Redis cache is always fresh");
+    }
+    
+    @Override
+    public long getCacheSize() {
+        try {
+            return redisTemplate.getConnectionFactory().getConnection().dbSize();
+        } catch (Exception e) {
+            logger.error("Failed to get cache size", e);
+            return 0L;
+        }
+    }
+    
+    @Override
+    public void setCacheEvictionPolicy(String policy) {
+        logger.info("Cache eviction policy set to: {}", policy);
+        // Redis eviction policy is typically set at server level
     }
 }

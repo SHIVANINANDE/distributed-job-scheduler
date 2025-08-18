@@ -2,6 +2,7 @@ package com.jobscheduler.service;
 
 import com.jobscheduler.model.Job;
 import com.jobscheduler.model.JobStatus;
+import com.jobscheduler.model.JobPriority;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -338,8 +339,10 @@ public class JobPriorityQueueService {
     private double calculatePriorityScore(Job job) {
         double baseScore = 0;
         
-        // Priority-based scoring
-        switch (job.getPriority()) {
+        // Priority-based scoring  
+        // Convert integer priority to JobPriority enum for calculation
+        JobPriority jobPriority = JobPriority.fromValue(job.getPriority());
+        switch (jobPriority) {
             case HIGH:
                 baseScore = 0;
                 break;
@@ -486,6 +489,120 @@ public class JobPriorityQueueService {
             
         } catch (Exception e) {
             logger.error("Failed to cleanup old jobs: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Acquire a lock on a job for processing
+     * @param jobId The job ID
+     * @param timeoutSeconds Lock timeout in seconds
+     * @return true if lock acquired successfully
+     */
+    public boolean acquireJobLock(String jobId, int timeoutSeconds) {
+        try {
+            String lockKey = "job:lock:" + jobId;
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, "locked", java.time.Duration.ofSeconds(timeoutSeconds));
+            return Boolean.TRUE.equals(acquired);
+        } catch (Exception e) {
+            logger.error("Failed to acquire lock for job {}: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Release the lock on a job
+     * @param jobId The job ID
+     * @return true if lock released successfully
+     */
+    public boolean releaseJobLock(String jobId) {
+        try {
+            String lockKey = "job:lock:" + jobId;
+            Boolean deleted = redisTemplate.delete(lockKey);
+            return Boolean.TRUE.equals(deleted);
+        } catch (Exception e) {
+            logger.error("Failed to release lock for job {}: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Add a job to the priority queue with specified priority
+     * @param jobId The job ID
+     * @param priority The priority score
+     * @return true if successfully added
+     */
+    public boolean addJobToPriorityQueue(String jobId, double priority) {
+        try {
+            if (zSetOps == null) {
+                initializeOperations();
+            }
+            Boolean added = zSetOps.add(PRIORITY_QUEUE_KEY, jobId, priority);
+            return Boolean.TRUE.equals(added);
+        } catch (Exception e) {
+            logger.error("Failed to add job {} to priority queue: {}", jobId, e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Poll for the highest priority job without removing it
+     * @return The highest priority job, or null if queue is empty
+     */
+    public Job pollHighestPriorityJob() {
+        try {
+            if (zSetOps == null) {
+                initializeOperations();
+            }
+            
+            Set<Object> result = zSetOps.range(PRIORITY_QUEUE_KEY, 0, 0);
+            if (result != null && !result.isEmpty()) {
+                String jobKey = (String) result.iterator().next();
+                Long jobId = extractJobIdFromKey(jobKey);
+                if (jobId != null) {
+                    return jobService.getJobById(jobId);
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            logger.error("Failed to poll highest priority job: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Get the current size of the priority queue
+     * @return The number of jobs in the queue
+     */
+    public long getQueueSize() {
+        try {
+            if (zSetOps == null) {
+                initializeOperations();
+            }
+            Long size = zSetOps.count(PRIORITY_QUEUE_KEY, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+            return size != null ? size : 0L;
+        } catch (Exception e) {
+            logger.error("Failed to get queue size: {}", e.getMessage());
+            return 0L;
+        }
+    }
+    
+    /**
+     * Check if a job is in the queue
+     * @param jobId The job ID to check
+     * @return true if job is in queue
+     */
+    public boolean isJobInQueue(Long jobId) {
+        try {
+            if (zSetOps == null) {
+                initializeOperations();
+            }
+            String jobKey = "job:" + jobId;
+            Double score = zSetOps.score(PRIORITY_QUEUE_KEY, jobKey);
+            return score != null;
+        } catch (Exception e) {
+            logger.error("Failed to check if job {} is in queue: {}", jobId, e.getMessage());
+            return false;
         }
     }
 }

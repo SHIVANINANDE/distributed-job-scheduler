@@ -1,7 +1,7 @@
 package com.jobscheduler.controller;
 
 import com.jobscheduler.model.Job;
-import com.jobscheduler.model.Job.JobPriority;
+import com.jobscheduler.model.JobPriority;
 import com.jobscheduler.service.JobPriorityQueueService;
 import com.jobscheduler.service.JobService;
 import org.slf4j.Logger;

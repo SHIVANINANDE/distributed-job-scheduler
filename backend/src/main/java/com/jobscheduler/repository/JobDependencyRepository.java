@@ -102,4 +102,23 @@ public interface JobDependencyRepository extends JpaRepository<JobDependency, Lo
                    ") SELECT * FROM dependency_chain",
            nativeQuery = true)
     List<Object[]> findDependencyChain(@Param("jobId") Long jobId);
+    
+    /**
+     * Find circular dependencies in the dependency graph
+     */
+    @Query(value = "WITH RECURSIVE dependency_path AS (" +
+                   "  SELECT job_id, dependency_job_id, ARRAY[job_id] as path, 1 as level " +
+                   "  FROM job_dependencies " +
+                   "  UNION ALL " +
+                   "  SELECT jd.job_id, jd.dependency_job_id, " +
+                   "         path || jd.job_id, dp.level + 1 " +
+                   "  FROM job_dependencies jd " +
+                   "  JOIN dependency_path dp ON jd.job_id = dp.dependency_job_id " +
+                   "  WHERE jd.job_id <> ALL(path) AND dp.level < 20" +
+                   ") " +
+                   "SELECT DISTINCT path[1] as job_id, dependency_job_id " +
+                   "FROM dependency_path " +
+                   "WHERE dependency_job_id = ANY(path)",
+           nativeQuery = true)
+    List<Object[]> findCircularDependencies();
 }

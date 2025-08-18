@@ -477,80 +477,38 @@ public class Worker {
                 '}';
     }
     
-    // Check if worker has available capacity
-    public boolean hasAvailableCapacity() {
-        return isActive() && currentJobCount != null && maxConcurrentJobs != null && 
-               currentJobCount < maxConcurrentJobs;
-    }
-    
-    // Add a job to current jobs
     public void addCurrentJob(Long jobId) {
-        if (currentJobIds == null) {
-            currentJobIds = new ArrayList<>();
-        }
-        if (!currentJobIds.contains(jobId)) {
-            currentJobIds.add(jobId);
-            if (currentJobCount == null) {
-                currentJobCount = 0;
-            }
-            currentJobCount++;
-            updateAvailableCapacity();
-        }
+        assignJob(jobId);
     }
     
-    // Remove a job from current jobs
     public void removeCurrentJob(Long jobId) {
-        if (currentJobIds != null && currentJobIds.contains(jobId)) {
-            currentJobIds.remove(jobId);
-            if (currentJobCount != null && currentJobCount > 0) {
-                currentJobCount--;
-            }
-            updateAvailableCapacity();
-        }
+        unassignJob(jobId);
     }
     
-    // Get current job IDs list
-    public List<Long> getCurrentJobIds() {
-        return currentJobIds != null ? new ArrayList<>(currentJobIds) : new ArrayList<>();
-    }
-    
-    // Clear all current jobs
-    public void clearCurrentJobs() {
-        if (currentJobIds != null) {
-            currentJobIds.clear();
-        }
-        currentJobCount = 0;
-        updateAvailableCapacity();
-    }
-    
-    // Increment successful jobs counter
     public void incrementSuccessfulJobs() {
-        if (totalJobsSuccessful == null) {
-            totalJobsSuccessful = 0L;
-        }
-        if (totalJobsProcessed == null) {
-            totalJobsProcessed = 0L;
-        }
-        totalJobsSuccessful++;
-        totalJobsProcessed++;
+        this.totalJobsSuccessful = (this.totalJobsSuccessful != null ? this.totalJobsSuccessful : 0L) + 1;
     }
     
-    // Increment failed jobs counter
     public void incrementFailedJobs() {
-        if (totalJobsFailed == null) {
-            totalJobsFailed = 0L;
-        }
-        if (totalJobsProcessed == null) {
-            totalJobsProcessed = 0L;
-        }
-        totalJobsFailed++;
-        totalJobsProcessed++;
+        this.totalJobsFailed = (this.totalJobsFailed != null ? this.totalJobsFailed : 0L) + 1;
+    }
+    
+    public void setAssignedWorker(String workerId) {
+        // This method exists for compatibility - workers don't assign themselves
+        // In actual implementation, this might be used for worker-to-worker delegation
+    }
+    
+    // Additional helper methods for job management
+    public void clearCurrentJobs() {
+        this.currentJobIds = "[]";
+        this.currentJobCount = 0;
+        updateAvailableCapacity();
     }
     
     // Worker Status Enum
     public enum WorkerStatus {
         ACTIVE("Active"),
-        INACTIVE("Inactive"),
+        INACTIVE("Inactive"), 
         BUSY("Busy"),
         ERROR("Error"),
         MAINTENANCE("Maintenance");

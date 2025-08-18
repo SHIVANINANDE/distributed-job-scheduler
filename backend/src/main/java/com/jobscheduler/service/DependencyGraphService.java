@@ -26,6 +26,9 @@ public class DependencyGraphService {
     private JobRepository jobRepository;
     
     @Autowired
+    private JobDependencyRepository dependencyRepository;
+    
+    @Autowired
     private DependencyGraphService dependencyGraphService;
     
     @Autowired

@@ -1,7 +1,7 @@
 package com.jobscheduler.service;
 
 import com.jobscheduler.model.Job;
-import com.jobscheduler.model.Job.JobStatus;
+import com.jobscheduler.model.JobStatus;
 import com.jobscheduler.model.Worker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,7 +117,7 @@ public class JobSchedulerService {
             
             // Simulate job execution time
             Thread.sleep(job.getEstimatedDuration() != null ? 
-                        job.getEstimatedDuration() * 1000 : 10000);
+                        job.getEstimatedDuration().toMillis() : 10000);
             
             // Simulate success/failure (90% success rate)
             boolean success = Math.random() > 0.1;

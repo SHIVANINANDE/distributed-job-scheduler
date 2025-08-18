@@ -100,9 +100,8 @@ public class JobService {
         String jobId = updatedJob.getId().toString();
         
         // Update cache
-        cacheService.evictJobFromCache(jobId);
-        cacheService.cacheJob(jobId, updatedJob, 60);
-        cacheService.cacheJobStatus(jobId, updatedJob.getStatus());
+        cacheService.evictJob(jobId);
+        cacheService.cacheJob(jobId, updatedJob);
         
         // Update priority queue if priority has changed
         if (updatedJob.getStatus() == JobStatus.PENDING) {
@@ -111,6 +110,12 @@ public class JobService {
         }
         
         return updatedJob;
+    }
+    
+    // Overloaded update job method (for backward compatibility)
+    public Job updateJob(Long jobId, Job job) {
+        job.setId(jobId);
+        return updateJob(job);
     }
     
     // Update job status with queue management
@@ -466,11 +471,6 @@ public class JobService {
     public List<Job> getScheduledJobsDueForExecution() {
         LocalDateTime now = LocalDateTime.now();
         return jobRepository.findByStatusAndScheduledAtLessThanEqual(JobStatus.SCHEDULED, now);
-    }
-    
-    // Get jobs by status
-    public List<Job> getJobsByStatus(JobStatus status) {
-        return jobRepository.findByStatus(status);
     }
     
     // Get jobs by worker

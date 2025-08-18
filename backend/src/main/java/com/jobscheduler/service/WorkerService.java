@@ -94,10 +94,16 @@ public class WorkerService {
         Worker updatedWorker = workerRepository.save(worker);
         
         // Update cache
-        cacheService.evictWorkerFromCache(worker.getWorkerId());
-        cacheService.cacheWorker(worker.getWorkerId(), updatedWorker, 300);
+        cacheService.evictWorker(worker.getWorkerId());
+        cacheService.cacheWorker(worker.getWorkerId(), updatedWorker);
         
         return updatedWorker;
+    }
+    
+    // Overloaded update worker method (for backward compatibility)
+    public Worker updateWorker(Long workerId, Worker worker) {
+        worker.setId(workerId);
+        return updateWorker(worker);
     }
     
     // Delete worker
@@ -360,12 +366,6 @@ public class WorkerService {
         public long getPotentiallyDeadWorkers() { return potentiallyDeadWorkers; }
         public double getAverageLoad() { return averageLoad; }
         public long getTotalJobsProcessed() { return totalJobsProcessed; }
-    }
-    
-    // Get available workers (ACTIVE status with available capacity)
-    public List<Worker> getAvailableWorkers() {
-        return workerRepository.findByStatusAndMaxConcurrentJobsGreaterThanCurrentJobCount(
-            Worker.WorkerStatus.ACTIVE);
     }
     
     // Get unhealthy workers (no recent heartbeat)
