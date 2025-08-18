@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material';
 import { useDashboardMetrics } from '../hooks/useApiQueries';
 import { SystemMonitoringDashboard } from '../components/Dashboard';
+import PerformanceMetrics from '../components/Dashboard/PerformanceMetrics';
 import { JobCreationForm, JobList, JobDetailsWithHistory } from '../components/Jobs';
 
 const ComprehensiveDashboardPage: React.FC = () => {
@@ -41,7 +42,7 @@ const ComprehensiveDashboardPage: React.FC = () => {
 
   const handleJobSelect = (jobId: string) => {
     setSelectedJobId(jobId);
-    setTabValue(2); // Switch to job details tab
+    setTabValue(3); // Switch to job details tab
   };
 
   if (isLoading) {
@@ -76,6 +77,7 @@ const ComprehensiveDashboardPage: React.FC = () => {
             scrollButtons="auto"
           >
             <Tab label="System Monitoring" />
+            <Tab label="Performance Metrics" />
             <Tab label="Job Management" />
             <Tab label="Job Details" />
           </Tabs>
@@ -88,8 +90,15 @@ const ComprehensiveDashboardPage: React.FC = () => {
           </Box>
         )}
         
-        {/* Job Management Tab */}
+        {/* Performance Metrics Tab */}
         {tabValue === 1 && (
+          <Box sx={{ p: 3 }}>
+            <PerformanceMetrics />
+          </Box>
+        )}
+        
+        {/* Job Management Tab */}
+        {tabValue === 2 && (
           <Box sx={{ p: 3 }}>
             <JobList 
               onCreateJob={handleCreateJob}
@@ -99,7 +108,7 @@ const ComprehensiveDashboardPage: React.FC = () => {
         )}
         
         {/* Job Details Tab */}
-        {tabValue === 2 && (
+        {tabValue === 3 && (
           <Box sx={{ p: 3 }}>
             {selectedJobId ? (
               <JobDetailsWithHistory jobId={selectedJobId} />

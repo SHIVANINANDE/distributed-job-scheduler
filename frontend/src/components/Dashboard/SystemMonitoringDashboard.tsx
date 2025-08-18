@@ -87,6 +87,24 @@ const SystemMonitoringDashboard: React.FC = () => {
       activeJobs: 0,
       lastSeen: new Date(Date.now() - 300000).toISOString(),
     },
+    {
+      id: '5',
+      name: 'worker-node-05',
+      status: 'healthy',
+      cpuUsage: 56,
+      memoryUsage: 63,
+      activeJobs: 4,
+      lastSeen: new Date().toISOString(),
+    },
+    {
+      id: '6',
+      name: 'worker-node-06',
+      status: 'healthy',
+      cpuUsage: 41,
+      memoryUsage: 38,
+      activeJobs: 2,
+      lastSeen: new Date().toISOString(),
+    },
   ]);
 
   const [alerts, setAlerts] = useState<SystemAlert[]>([
@@ -105,14 +123,26 @@ const SystemMonitoringDashboard: React.FC = () => {
   ]);
 
   const [performanceData] = useState([
-    { time: '14:00', cpu: 45, memory: 62, jobs: 12 },
-    { time: '14:05', cpu: 52, memory: 58, jobs: 15 },
-    { time: '14:10', cpu: 48, memory: 61, jobs: 18 },
-    { time: '14:15', cpu: 61, memory: 65, jobs: 14 },
-    { time: '14:20', cpu: 58, memory: 63, jobs: 16 },
-    { time: '14:25', cpu: 73, memory: 71, jobs: 22 },
-    { time: '14:30', cpu: 67, memory: 68, jobs: 19 },
+    { time: '14:00', cpu: 45, memory: 62, jobs: 12, throughput: 245, latency: 85 },
+    { time: '14:05', cpu: 52, memory: 58, jobs: 15, throughput: 312, latency: 78 },
+    { time: '14:10', cpu: 48, memory: 61, jobs: 18, throughput: 287, latency: 92 },
+    { time: '14:15', cpu: 61, memory: 65, jobs: 14, throughput: 198, latency: 105 },
+    { time: '14:20', cpu: 58, memory: 63, jobs: 16, throughput: 256, latency: 88 },
+    { time: '14:25', cpu: 73, memory: 71, jobs: 22, throughput: 342, latency: 112 },
+    { time: '14:30', cpu: 67, memory: 68, jobs: 19, throughput: 298, latency: 95 },
   ]);
+
+  // System metrics with quantifiable data
+  const [systemMetrics] = useState({
+    totalJobsProcessed: 47832,
+    averageLatency: 94, // milliseconds
+    systemUptime: 99.7, // percentage
+    dailyThroughput: 2156,
+    errorRate: 0.23, // percentage
+    peakConcurrentJobs: 47,
+    totalDataProcessed: 1.2, // TB
+    averageResponseTime: 156, // milliseconds
+  });
 
   const getWorkerStatusColor = (status: string): string => {
     switch (status) {
@@ -153,7 +183,64 @@ const SystemMonitoringDashboard: React.FC = () => {
       </Typography>
 
       <Stack spacing={3}>
-        {/* System Alerts */}
+        {/* System Metrics Overview */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h3" color="primary.main" fontWeight="bold">
+                {systemMetrics.totalJobsProcessed.toLocaleString()}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Total Jobs Processed
+              </Typography>
+              <Typography variant="caption" color="success.main">
+                +{systemMetrics.dailyThroughput} today
+              </Typography>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h3" color="success.main" fontWeight="bold">
+                {systemMetrics.systemUptime}%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                System Uptime
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Last 30 days
+              </Typography>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h3" color="info.main" fontWeight="bold">
+                {systemMetrics.averageLatency}ms
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Avg Response Time
+              </Typography>
+              <Typography variant="caption" color="success.main">
+                -12ms from yesterday
+              </Typography>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Typography variant="h3" color="warning.main" fontWeight="bold">
+                {systemMetrics.errorRate}%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Error Rate
+              </Typography>
+              <Typography variant="caption" color="success.main">
+                -0.05% from last week
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
         <Box>
           {alerts.map((alert, index) => (
             <Alert
@@ -272,12 +359,20 @@ const SystemMonitoringDashboard: React.FC = () => {
                             {new Date(worker.lastSeen).toLocaleTimeString()}
                           </Typography>
                         </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Processed: {Math.floor(Math.random() * 5000 + 1000)} jobs
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Uptime: {worker.status === 'unhealthy' ? '0%' : `${Math.floor(Math.random() * 10 + 90)}%`}
+                          </Typography>
+                        </Box>
                       </Stack>
                     </Paper>
                   ))}
                 </Box>
                 
-                {/* Priority Queue Status */}
                 <Paper elevation={1} sx={{ p: 2, mt: 2 }}>
                   <Typography variant="h6" gutterBottom>
                     Priority Queue Status
@@ -286,16 +381,52 @@ const SystemMonitoringDashboard: React.FC = () => {
                     <Box>
                       <Typography variant="h4" color="primary">24</Typography>
                       <Typography variant="body2" color="text.secondary">High Priority</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Est. 12 min wait
+                      </Typography>
                     </Box>
                     <Box>
-                      <Typography variant="h4" color="warning.main">12</Typography>
+                      <Typography variant="h4" color="warning.main">156</Typography>
                       <Typography variant="body2" color="text.secondary">Medium Priority</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Est. 45 min wait
+                      </Typography>
                     </Box>
                     <Box>
-                      <Typography variant="h4" color="info.main">8</Typography>
+                      <Typography variant="h4" color="info.main">312</Typography>
                       <Typography variant="body2" color="text.secondary">Low Priority</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Est. 2.3 hrs wait
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="h4" color="success.main">{systemMetrics.peakConcurrentJobs}</Typography>
+                      <Typography variant="body2" color="text.secondary">Peak Concurrent</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        This week
+                      </Typography>
                     </Box>
                   </Stack>
+                  
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Queue Processing Rate
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={73}
+                      sx={{ 
+                        height: 8, 
+                        borderRadius: 4,
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: '#4caf50',
+                        }
+                      }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      73% efficiency • {systemMetrics.dailyThroughput} jobs/day • {systemMetrics.totalDataProcessed} TB processed
+                    </Typography>
+                  </Box>
                 </Paper>
               </CardContent>
             </Card>
@@ -312,19 +443,25 @@ const SystemMonitoringDashboard: React.FC = () => {
                   <PieChart width={280} height={200}>
                     <Pie
                       data={[
-                        { name: 'Running', value: 45, fill: '#4caf50' },
-                        { name: 'Queued', value: 23, fill: '#ff9800' },
-                        { name: 'Failed', value: 8, fill: '#f44336' },
-                        { name: 'Completed', value: 124, fill: '#2196f3' },
+                        { name: 'Running', value: 847, fill: '#4caf50' },
+                        { name: 'Queued', value: 492, fill: '#ff9800' },
+                        { name: 'Failed', value: 23, fill: '#f44336' },
+                        { name: 'Completed', value: 46470, fill: '#2196f3' },
                       ]}
                       cx={140}
                       cy={100}
                       outerRadius={70}
                       dataKey="value"
-                      label={({ name, percent }) => `${name}: ${(percent! * 100).toFixed(0)}%`}
+                      label={({ name, value, percent }) => `${name}: ${value} (${(percent! * 100).toFixed(1)}%)`}
                     />
-                    <Tooltip />
+                    <Tooltip formatter={(value, name) => [`${value} jobs`, name]} />
                   </PieChart>
+                </Box>
+                
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary" align="center">
+                    Success Rate: <strong>99.77%</strong> • Avg Processing Time: <strong>{systemMetrics.averageResponseTime}ms</strong>
+                  </Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -350,6 +487,8 @@ const SystemMonitoringDashboard: React.FC = () => {
                     <Line type="monotone" dataKey="cpu" stroke="#8884d8" strokeWidth={2} name="CPU %" />
                     <Line type="monotone" dataKey="memory" stroke="#82ca9d" strokeWidth={2} name="Memory %" />
                     <Line type="monotone" dataKey="jobs" stroke="#ffc658" strokeWidth={2} name="Active Jobs" />
+                    <Line type="monotone" dataKey="throughput" stroke="#ff7300" strokeWidth={2} name="Throughput (jobs/min)" />
+                    <Line type="monotone" dataKey="latency" stroke="#8dd1e1" strokeWidth={2} name="Latency (ms)" />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -365,23 +504,41 @@ const SystemMonitoringDashboard: React.FC = () => {
                 </Typography>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={[
-                    { name: 'Mon', completed: 24, failed: 2 },
-                    { name: 'Tue', completed: 31, failed: 1 },
-                    { name: 'Wed', completed: 28, failed: 3 },
-                    { name: 'Thu', completed: 35, failed: 1 },
-                    { name: 'Fri', completed: 42, failed: 2 },
-                    { name: 'Sat', completed: 18, failed: 0 },
-                    { name: 'Sun', completed: 15, failed: 1 },
+                    { name: 'Mon', completed: 3124, failed: 18, throughput: 89.7 },
+                    { name: 'Tue', completed: 3567, failed: 12, throughput: 91.2 },
+                    { name: 'Wed', completed: 2987, failed: 34, throughput: 87.4 },
+                    { name: 'Thu', completed: 4234, failed: 19, throughput: 94.1 },
+                    { name: 'Fri', completed: 4789, failed: 26, throughput: 95.8 },
+                    { name: 'Sat', completed: 2156, failed: 8, throughput: 88.9 },
+                    { name: 'Sun', completed: 1876, failed: 11, throughput: 85.3 },
                   ]}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip formatter={(value, name) => {
+                      if (name === 'Throughput %') return [`${value}%`, name];
+                      return [`${value} jobs`, name];
+                    }} />
                     <Legend />
-                    <Bar dataKey="completed" fill="#4caf50" name="Completed" />
-                    <Bar dataKey="failed" fill="#f44336" name="Failed" />
+                    <Bar dataKey="completed" fill="#4caf50" name="Completed Jobs" />
+                    <Bar dataKey="failed" fill="#f44336" name="Failed Jobs" />
                   </BarChart>
                 </ResponsiveContainer>
+                
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                  <Box>
+                    <Typography variant="h6" color="primary">22,733</Typography>
+                    <Typography variant="caption" color="text.secondary">Total This Week</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="h6" color="success.main">91.8%</Typography>
+                    <Typography variant="caption" color="text.secondary">Avg Success Rate</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="h6" color="info.main">3,247</Typography>
+                    <Typography variant="caption" color="text.secondary">Daily Average</Typography>
+                  </Box>
+                </Box>
               </CardContent>
             </Card>
           </Box>
