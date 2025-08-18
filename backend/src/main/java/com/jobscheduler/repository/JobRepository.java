@@ -131,7 +131,4 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     
     // Find scheduled jobs due for execution
     List<Job> findByStatusAndScheduledAtLessThanEqual(JobStatus status, LocalDateTime dateTime);
-    
-    // Find jobs by assigned worker
-    List<Job> findByAssignedWorker(String workerId);
 }

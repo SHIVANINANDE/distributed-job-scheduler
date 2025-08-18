@@ -47,7 +47,7 @@ public class WorkerService {
         
         // Cache the worker (non-blocking operation)
         try {
-            cacheService.cacheWorker(savedWorker.getWorkerId(), savedWorker, 300); // Cache for 5 minutes
+            cacheService.cacheWorker(savedWorker.getWorkerId(), (Object) savedWorker, 300); // Cache for 5 minutes
         } catch (Exception e) {
             logger.warn("Failed to cache worker {}: {}", savedWorker.getWorkerId(), e.getMessage());
         }
@@ -79,7 +79,7 @@ public class WorkerService {
         Optional<Worker> workerOpt = workerRepository.findByWorkerId(workerId);
         if (workerOpt.isPresent()) {
             Worker worker = workerOpt.get();
-            cacheService.cacheWorker(workerId, worker, 300); // Cache for 5 minutes
+            cacheService.cacheWorker(workerId, (Object) worker, 300); // Cache for 5 minutes
             logger.debug("Retrieved worker {} from database and cached it", workerId);
         }
         
@@ -95,7 +95,7 @@ public class WorkerService {
         
         // Update cache
         cacheService.evictWorker(worker.getWorkerId());
-        cacheService.cacheWorker(worker.getWorkerId(), updatedWorker);
+        cacheService.cacheWorker(worker.getWorkerId(), (Object) updatedWorker, 300);
         
         return updatedWorker;
     }
@@ -152,7 +152,7 @@ public class WorkerService {
             Worker updatedWorker = workerRepository.save(worker);
             
             // Update cache
-            cacheService.cacheWorker(workerId, updatedWorker, 300);
+            cacheService.cacheWorker(workerId, (Object) updatedWorker, 300);
             
             logger.debug("Updated heartbeat for worker: {}", workerId);
             return updatedWorker;
@@ -202,7 +202,7 @@ public class WorkerService {
             Worker updatedWorker = workerRepository.save(worker);
             
             // Update cache
-            cacheService.cacheWorker(workerId, updatedWorker, 300);
+            cacheService.cacheWorker(workerId, (Object) updatedWorker, 300);
             
             logger.info("Assigned job {} to worker {}", jobId, workerId);
             return updatedWorker;
@@ -221,7 +221,7 @@ public class WorkerService {
             Worker updatedWorker = workerRepository.save(worker);
             
             // Update cache
-            cacheService.cacheWorker(workerId, updatedWorker, 300);
+            cacheService.cacheWorker(workerId, (Object) updatedWorker, 300);
             
             logger.info("Unassigned job {} from worker {}", jobId, workerId);
             return updatedWorker;
@@ -241,7 +241,7 @@ public class WorkerService {
             Worker updatedWorker = workerRepository.save(worker);
             
             // Update cache
-            cacheService.cacheWorker(workerId, updatedWorker, 300);
+            cacheService.cacheWorker(workerId, (Object) updatedWorker, 300);
             
             logger.info("Recorded job completion for worker {}: job {} - success: {}", 
                        workerId, jobId, successful);
@@ -296,7 +296,7 @@ public class WorkerService {
             Worker updatedWorker = workerRepository.save(worker);
             
             // Update cache
-            cacheService.cacheWorker(workerId, updatedWorker, 300);
+            cacheService.cacheWorker(workerId, (Object) updatedWorker, 300);
             
             logger.info("Updated worker {} status to {}", workerId, status);
             return updatedWorker;
@@ -372,5 +372,29 @@ public class WorkerService {
     public List<Worker> getUnhealthyWorkers() {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(5); // 5 minutes threshold
         return workerRepository.findByLastHeartbeatBefore(threshold);
+    }
+    
+    // Additional methods for job assignment service
+    public Worker getWorkerByWorkerIdDirect(String workerId) {
+        Optional<Worker> workerOpt = getWorkerByWorkerId(workerId);
+        return workerOpt.orElse(null);
+    }
+    
+    public List<Worker> getAllWorkers() {
+        return workerRepository.findAll();
+    }
+    
+    public void markWorkerAsUnhealthy(String workerId, String reason) {
+        try {
+            Optional<Worker> workerOpt = getWorkerByWorkerId(workerId);
+            if (workerOpt.isPresent()) {
+                Worker worker = workerOpt.get();
+                worker.setStatus(Worker.WorkerStatus.ERROR);
+                updateWorker(worker);
+                logger.warn("Marked worker {} as unhealthy: {}", workerId, reason);
+            }
+        } catch (Exception e) {
+            logger.error("Error marking worker {} as unhealthy: {}", workerId, e.getMessage(), e);
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.jobscheduler.controller;
 
+import com.jobscheduler.model.Job;
 import com.jobscheduler.service.DeadlockDetectionService;
 import com.jobscheduler.service.DeadlockDetectionService.DeadlockDetectionResult;
 import com.jobscheduler.service.DeadlockDetectionService.DependencyValidationResult;
@@ -124,19 +125,21 @@ public class DeadlockDetectionController {
                 var childJob = jobService.getJobById(childJobId);
                 var parentJob = jobService.getJobById(parentJobId);
                 
-                if (childJob != null) {
+                if (childJob.isPresent()) {
+                    Job child = childJob.get();
                     jobDetails.put("childJob", Map.of(
-                        "id", childJob.getId(),
-                        "name", childJob.getName(),
-                        "status", childJob.getStatus()
+                        "id", child.getId(),
+                        "name", child.getName(),
+                        "status", child.getStatus()
                     ));
                 }
                 
-                if (parentJob != null) {
+                if (parentJob.isPresent()) {
+                    Job parent = parentJob.get();
                     jobDetails.put("parentJob", Map.of(
-                        "id", parentJob.getId(),
-                        "name", parentJob.getName(),
-                        "status", parentJob.getStatus()
+                        "id", parent.getId(),
+                        "name", parent.getName(),
+                        "status", parent.getStatus()
                     ));
                 }
                 

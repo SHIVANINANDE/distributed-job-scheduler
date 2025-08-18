@@ -176,8 +176,8 @@ public class JobDependencyController {
         }
     }
     
-    // Get jobs ready to execute
-    @GetMapping("/ready-jobs")
+    // Get jobs ready to execute (job IDs only)
+    @GetMapping("/ready-job-ids")
     public ResponseEntity<List<Long>> getJobsReadyToExecute() {
         List<Long> jobIds = jobDependencyService.getJobsReadyToExecute();
         return ResponseEntity.ok(jobIds);

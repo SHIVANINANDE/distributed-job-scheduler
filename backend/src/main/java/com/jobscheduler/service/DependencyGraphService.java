@@ -8,6 +8,7 @@ import com.jobscheduler.repository.JobDependencyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +30,7 @@ public class DependencyGraphService {
     private JobDependencyRepository dependencyRepository;
     
     @Autowired
-    private DependencyGraphService dependencyGraphService;
-    
-    @Autowired
+    @Lazy
     private DeadlockDetectionService deadlockDetectionService;    @Autowired
     private JobService jobService;
     
@@ -207,7 +206,7 @@ public class DependencyGraphService {
                 Integer inDegree = entry.getValue();
                 
                 if (inDegree == 0) {
-                    Job job = jobService.getJobById(jobId);
+                    Job job = jobService.getJobById(jobId).orElse(null);
                     if (job != null && job.getStatus() == JobStatus.PENDING) {
                         readyJobs.add(job);
                     }
@@ -304,7 +303,7 @@ public class DependencyGraphService {
                     
                     // If in-degree becomes 0, job is ready
                     if (newInDegree == 0) {
-                        Job readyJob = jobService.getJobById(dependentJobId);
+                        Job readyJob = jobService.getJobById(dependentJobId).orElse(null);
                         if (readyJob != null && readyJob.getStatus() == JobStatus.PENDING) {
                             newlyReadyJobs.add(readyJob);
                         }
@@ -493,7 +492,7 @@ public class DependencyGraphService {
             
             for (Map.Entry<Long, Integer> entry : tempInDegree.entrySet()) {
                 if (entry.getValue() == 0) {
-                    Job job = jobService.getJobById(entry.getKey());
+                    Job job = jobService.getJobById(entry.getKey()).orElse(null);
                     if (job != null && job.getStatus() == JobStatus.PENDING) {
                         currentBatch.add(job);
                     }

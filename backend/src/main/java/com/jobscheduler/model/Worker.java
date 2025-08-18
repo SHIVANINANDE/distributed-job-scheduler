@@ -505,6 +505,18 @@ public class Worker {
         updateAvailableCapacity();
     }
     
+    // Additional methods for job assignment and load balancing
+    public boolean canAcceptMoreJobs() {
+        return isAvailable() && hasAvailableCapacity();
+    }
+    
+    public double getAverageExecutionTime() {
+        // This would be calculated from job execution history
+        // For now, returning a default value - in real implementation, 
+        // this would be tracked per worker
+        return 5000.0; // 5 seconds default
+    }
+    
     // Worker Status Enum
     public enum WorkerStatus {
         ACTIVE("Active"),

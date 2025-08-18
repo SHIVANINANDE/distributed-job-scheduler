@@ -10,6 +10,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -302,10 +305,22 @@ public class JobSchedulerService {
      */
     private void reassignJobsFromWorker(Worker worker) {
         try {
-            List<Long> currentJobs = worker.getCurrentJobIds();
+            String currentJobIdsStr = worker.getCurrentJobIds();
+            List<Long> currentJobs = new ArrayList<>();
+            
+            if (currentJobIdsStr != null && !currentJobIdsStr.trim().isEmpty()) {
+                String[] jobIdArray = currentJobIdsStr.split(",");
+                for (String jobIdStr : jobIdArray) {
+                    try {
+                        currentJobs.add(Long.parseLong(jobIdStr.trim()));
+                    } catch (NumberFormatException e) {
+                        logger.warn("Invalid job ID format: {}", jobIdStr);
+                    }
+                }
+            }
             
             for (Long jobId : currentJobs) {
-                Job job = jobService.getJobById(jobId);
+                Job job = jobService.getJobByIdDirect(jobId);
                 if (job != null && job.getStatus() == JobStatus.RUNNING) {
                     logger.info("Reassigning job {} from unhealthy worker {}", 
                                job.getJobId(), worker.getWorkerId());
@@ -383,7 +398,7 @@ public class JobSchedulerService {
             
             for (Job job : firstBatch) {
                 // Check if job is already in queue or running
-                if (job.getStatus() == com.jobscheduler.model.Job.JobStatus.PENDING) {
+                if (job.getStatus() == JobStatus.PENDING) {
                     if (!queueService.isJobInQueue(job.getId())) {
                         queueService.addJobToQueue(job);
                         addedJobs++;

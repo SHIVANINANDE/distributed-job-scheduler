@@ -6,6 +6,7 @@ import com.jobscheduler.repository.JobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class JobService {
     private JobRepository jobRepository;
     
     @Autowired
+    @Lazy
     private JobPriorityQueueService priorityQueueService;
     
     @Autowired
@@ -92,6 +94,12 @@ public class JobService {
         return jobOpt;
     }
     
+    // Get job by ID - direct return (for assignment service)
+    public Job getJobByIdDirect(Long id) {
+        Optional<Job> jobOpt = getJobById(id);
+        return jobOpt.orElse(null);
+    }
+    
     // Update job
     public Job updateJob(Job job) {
         logger.info("Updating job: {}", job.getId());
@@ -101,12 +109,12 @@ public class JobService {
         
         // Update cache
         cacheService.evictJob(jobId);
-        cacheService.cacheJob(jobId, updatedJob);
+        cacheService.cacheJob(jobId, updatedJob, 3600); // Cache for 1 hour
         
         // Update priority queue if priority has changed
         if (updatedJob.getStatus() == JobStatus.PENDING) {
             double newPriority = calculateJobPriority(updatedJob);
-            priorityQueueService.updateJobPriority(jobId, newPriority);
+            priorityQueueService.updateJobPriority(Long.parseLong(jobId), String.valueOf(newPriority));
         }
         
         return updatedJob;
@@ -122,7 +130,7 @@ public class JobService {
     public Job updateJobStatus(Long jobId, JobStatus newStatus) {
         logger.info("Updating job {} status to {}", jobId, newStatus);
         
-        Job job = getJobById(jobId);
+        Job job = getJobByIdDirect(jobId);
         if (job == null) {
             throw new RuntimeException("Job not found: " + jobId);
         }
@@ -212,7 +220,7 @@ public class JobService {
                     // Update cache and remove from priority queue
                     cacheService.cacheJob(jobId, updatedJob, 60);
                     cacheService.cacheJobStatus(jobId, JobStatus.RUNNING);
-                    priorityQueueService.removeJobFromQueue(jobId);
+                    priorityQueueService.removeJobFromQueue(Long.parseLong(jobId));
                     
                     // Record execution metrics
                     cacheService.incrementJobExecutionCount(jobId);
@@ -320,7 +328,7 @@ public class JobService {
                 // Update cache and remove from priority queue
                 cacheService.cacheJob(jobId, updatedJob, 60);
                 cacheService.cacheJobStatus(jobId, JobStatus.CANCELLED);
-                priorityQueueService.removeJobFromQueue(jobId);
+                priorityQueueService.removeJobFromQueue(Long.parseLong(jobId));
                 
                 // Release job lock if it was acquired
                 priorityQueueService.releaseJobLock(jobId);
@@ -363,24 +371,23 @@ public class JobService {
         return jobRepository.findByNameContainingIgnoreCase(name);
     }
     
-    // Get next job from priority queue
+        // Get next job from priority queue
     public Job getNextJobFromQueue() {
-        String jobId = priorityQueueService.pollHighestPriorityJob();
-        if (jobId != null) {
+        Job job = priorityQueueService.pollHighestPriorityJob();
+        if (job != null) {
             try {
-                Long id = Long.parseLong(jobId);
-                Optional<Job> jobOpt = getJobById(id);
-                if (jobOpt.isPresent()) {
-                    Job job = jobOpt.get();
-                    if (job.getStatus() == JobStatus.PENDING) {
-                        logger.info("Retrieved next job from queue: {}", jobId);
-                        return job;
-                    } else {
-                        logger.warn("Job {} from queue is not in PENDING status: {}", jobId, job.getStatus());
-                    }
+                // Job is already available directly from priority queue
+                if (job.getStatus() == JobStatus.PENDING) {
+                    job.setStatus(JobStatus.RUNNING);
+                    job.setStartedAt(LocalDateTime.now());
+                    jobRepository.save(job);
+                    
+                    // Cache the updated job
+                    cacheService.cacheJob(job.getId().toString(), job, 3600);
+                    return job;
                 }
-            } catch (NumberFormatException e) {
-                logger.error("Invalid job ID format in queue: {}", jobId, e);
+            } catch (Exception e) {
+                logger.error("Error getting next job from queue: ", e);
             }
         }
         return null;
@@ -475,7 +482,7 @@ public class JobService {
     
     // Get jobs by worker
     public List<Job> getJobsByWorker(String workerId) {
-        return jobRepository.findByAssignedWorker(workerId);
+        return jobRepository.findByAssignedWorkerId(workerId);
     }
     
     // Update job result

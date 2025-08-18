@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Transactional
@@ -157,8 +159,14 @@ public class DeadlockDetectionService {
             
             // 3. Database-level cycle detection (PostgreSQL specific)
             try {
-                List<Long> dbCycles = dependencyRepository.findCircularDependencies();
-                if (!dbCycles.isEmpty()) {
+                List<Object[]> dbCycleResults = dependencyRepository.findCircularDependencies();
+                if (!dbCycleResults.isEmpty()) {
+                    // Extract unique job IDs from the result pairs
+                    List<Long> dbCycles = dbCycleResults.stream()
+                        .flatMap(result -> Stream.of((Long) result[0], (Long) result[1]))
+                        .distinct()
+                        .collect(Collectors.toList());
+                    
                     DeadlockCycle dbCycle = createCycleFromJobIds(dbCycles, dependencies, 
                                                                 "Database-detected cycle", 9);
                     if (!containsCycle(cycles, dbCycle)) {

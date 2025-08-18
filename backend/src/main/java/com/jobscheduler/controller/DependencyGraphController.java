@@ -64,8 +64,8 @@ public class DependencyGraphController {
         
         try {
             // Validate that jobs exist
-            Job childJob = jobService.getJobById(childJobId);
-            Job parentJob = jobService.getJobById(parentJobId);
+            Job childJob = jobService.getJobById(childJobId).orElse(null);
+            Job parentJob = jobService.getJobById(parentJobId).orElse(null);
             
             if (childJob == null) {
                 Map<String, Object> response = new HashMap<>();
@@ -206,7 +206,7 @@ public class DependencyGraphController {
                 // Get job details for sorted IDs
                 List<Map<String, Object>> sortedJobs = new ArrayList<>();
                 for (Long jobId : sortedJobIds) {
-                    Job job = jobService.getJobById(jobId);
+                    Job job = jobService.getJobById(jobId).orElse(null);
                     if (job != null) {
                         sortedJobs.add(Map.of(
                             "id", job.getId(),
@@ -280,7 +280,7 @@ public class DependencyGraphController {
     @GetMapping("/{jobId}/dependencies")
     public ResponseEntity<Map<String, Object>> getJobDependencies(@PathVariable Long jobId) {
         try {
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobById(jobId).orElse(null);
             if (job == null) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -294,7 +294,7 @@ public class DependencyGraphController {
             // Get job details for dependencies
             List<Map<String, Object>> dependencies = new ArrayList<>();
             for (Long depId : dependencyIds) {
-                Job depJob = jobService.getJobById(depId);
+                Job depJob = jobService.getJobById(depId).orElse(null);
                 if (depJob != null) {
                     dependencies.add(Map.of(
                         "id", depJob.getId(),
@@ -308,7 +308,7 @@ public class DependencyGraphController {
             // Get job details for dependents
             List<Map<String, Object>> dependents = new ArrayList<>();
             for (Long depId : dependentIds) {
-                Job depJob = jobService.getJobById(depId);
+                Job depJob = jobService.getJobById(depId).orElse(null);
                 if (depJob != null) {
                     dependents.add(Map.of(
                         "id", depJob.getId(),
@@ -349,7 +349,7 @@ public class DependencyGraphController {
     @PostMapping("/{jobId}/complete")
     public ResponseEntity<Map<String, Object>> updateJobCompletion(@PathVariable Long jobId) {
         try {
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobById(jobId).orElse(null);
             if (job == null) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);

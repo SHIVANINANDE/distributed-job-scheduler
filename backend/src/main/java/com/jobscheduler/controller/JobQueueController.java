@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Optional;
+
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +34,7 @@ public class JobQueueController {
     @PostMapping("/add/{jobId}")
     public ResponseEntity<?> addJobToQueue(@PathVariable Long jobId) {
         try {
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobById(jobId).orElse(null);
             if (job == null) {
                 return ResponseEntity.notFound().build();
             }
@@ -95,7 +97,7 @@ public class JobQueueController {
     public ResponseEntity<?> updateJobPriority(@PathVariable Long jobId, 
                                              @RequestParam JobPriority priority) {
         try {
-            boolean updated = queueService.updateJobPriority(jobId, priority);
+            boolean updated = queueService.updateJobPriority(jobId, priority.toString());
             if (updated) {
                 logger.info("Updated priority for job {} to {} via API", jobId, priority);
                 return ResponseEntity.ok().body(Map.of(
@@ -153,7 +155,8 @@ public class JobQueueController {
         try {
             List<Job> jobs = jobIds.stream()
                 .map(jobService::getJobById)
-                .filter(job -> job != null)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
                 .toList();
             
             if (jobs.isEmpty()) {
@@ -264,7 +267,7 @@ public class JobQueueController {
     @PostMapping("/complete/{jobId}")
     public ResponseEntity<?> markJobCompleted(@PathVariable Long jobId) {
         try {
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobById(jobId).orElse(null);
             if (job == null) {
                 return ResponseEntity.notFound().build();
             }
@@ -293,7 +296,7 @@ public class JobQueueController {
     @PostMapping("/fail/{jobId}")
     public ResponseEntity<?> markJobFailed(@PathVariable Long jobId) {
         try {
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobById(jobId).orElse(null);
             if (job == null) {
                 return ResponseEntity.notFound().build();
             }

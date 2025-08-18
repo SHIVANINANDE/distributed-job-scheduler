@@ -10,6 +10,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
+
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -91,7 +93,7 @@ public class JobPriorityQueueService {
                 Long jobId = extractJobIdFromKey(jobKey);
                 
                 if (jobId != null) {
-                    Job job = jobService.getJobById(jobId);
+                    Job job = jobService.getJobByIdDirect(jobId);
                     if (job != null) {
                         // Move to processing queue
                         addJobToProcessingQueue(job);
@@ -123,7 +125,7 @@ public class JobPriorityQueueService {
                 initializeOperations();
             }
             
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobByIdDirect(jobId);
             if (job == null) {
                 logger.warn("Job {} not found for priority update", jobId);
                 return false;
@@ -174,7 +176,8 @@ public class JobPriorityQueueService {
                     .map(key -> extractJobIdFromKey((String) key))
                     .filter(Objects::nonNull)
                     .map(jobService::getJobById)
-                    .filter(Objects::nonNull)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
                     .collect(Collectors.toList());
             }
             
@@ -247,7 +250,7 @@ public class JobPriorityQueueService {
                     Long jobId = extractJobIdFromKey(jobKey);
                     
                     if (jobId != null) {
-                        Job job = jobService.getJobById(jobId);
+                        Job job = jobService.getJobByIdDirect(jobId);
                         if (job != null) {
                             addJobToProcessingQueue(job);
                             jobs.add(job);
@@ -277,7 +280,7 @@ public class JobPriorityQueueService {
                 initializeOperations();
             }
             
-            Job job = jobService.getJobById(jobId);
+            Job job = jobService.getJobByIdDirect(jobId);
             if (job == null) {
                 return false;
             }
@@ -560,7 +563,7 @@ public class JobPriorityQueueService {
                 String jobKey = (String) result.iterator().next();
                 Long jobId = extractJobIdFromKey(jobKey);
                 if (jobId != null) {
-                    return jobService.getJobById(jobId);
+                    return jobService.getJobByIdDirect(jobId);
                 }
             }
             return null;
