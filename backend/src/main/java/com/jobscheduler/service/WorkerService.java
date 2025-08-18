@@ -397,4 +397,29 @@ public class WorkerService {
             logger.error("Error marking worker {} as unhealthy: {}", workerId, e.getMessage(), e);
         }
     }
+    
+    /**
+     * Find workers with missed heartbeats
+     */
+    public List<Worker> findWorkersWithMissedHeartbeats(LocalDateTime cutoffTime) {
+        return workerRepository.findByLastHeartbeatBefore(cutoffTime);
+    }
+    
+    /**
+     * Mark worker as failed
+     */
+    public void markWorkerAsFailed(String workerId, String reason) {
+        try {
+            Optional<Worker> workerOpt = getWorkerByWorkerId(workerId);
+            if (workerOpt.isPresent()) {
+                Worker worker = workerOpt.get();
+                worker.setStatus(Worker.WorkerStatus.ERROR);
+                worker.setUpdatedAt(LocalDateTime.now());
+                updateWorker(worker);
+                logger.warn("Marked worker {} as failed: {}", workerId, reason);
+            }
+        } catch (Exception e) {
+            logger.error("Error marking worker {} as failed: {}", workerId, e.getMessage(), e);
+        }
+    }
 }

@@ -531,4 +531,12 @@ public class JobAssignmentService {
         public long getFailedAssignments() { return failedAssignments; }
         public LocalDateTime getLastAssignment() { return lastAssignment; }
     }
+    
+    /**
+     * Assign job to worker (returns boolean for success/failure)
+     */
+    public boolean assignJobToWorker(Job job) {
+        Worker assignedWorker = assignJob(job);
+        return assignedWorker != null;
+    }
 }

@@ -669,4 +669,80 @@ public class RedisCacheService implements CacheService {
         logger.info("Cache eviction policy set to: {}", policy);
         // Redis eviction policy is typically set at server level
     }
+    
+    /**
+     * Add value to Redis set
+     */
+    public Long sadd(String key, String value) {
+        try {
+            return redisTemplate.opsForSet().add(key, value);
+        } catch (Exception e) {
+            logger.error("Error adding to set key: {}", key, e);
+            return 0L;
+        }
+    }
+    
+    /**
+     * Get all members of Redis set
+     */
+    public List<String> smembers(String key) {
+        try {
+            Set<Object> members = redisTemplate.opsForSet().members(key);
+            return members != null ? 
+                   members.stream().map(Object::toString).toList() : 
+                   List.of();
+        } catch (Exception e) {
+            logger.error("Error getting set members for key: {}", key, e);
+            return List.of();
+        }
+    }
+    
+    /**
+     * Get string value from Redis
+     */
+    public String get(String key) {
+        try {
+            Object value = redisTemplate.opsForValue().get(key);
+            return value != null ? value.toString() : null;
+        } catch (Exception e) {
+            logger.error("Error getting string value for key: {}", key, e);
+            return null;
+        }
+    }
+    
+    /**
+     * Delete key from Redis
+     */
+    public Boolean delete(String key) {
+        try {
+            return redisTemplate.delete(key);
+        } catch (Exception e) {
+            logger.error("Error deleting key: {}", key, e);
+            return false;
+        }
+    }
+    
+    /**
+     * Remove value from Redis set
+     */
+    public Long srem(String key, String value) {
+        try {
+            return redisTemplate.opsForSet().remove(key, value);
+        } catch (Exception e) {
+            logger.error("Error removing from set key: {}", key, e);
+            return 0L;
+        }
+    }
+    
+    /**
+     * Get cardinality (size) of Redis set
+     */
+    public Long scard(String key) {
+        try {
+            return redisTemplate.opsForSet().size(key);
+        } catch (Exception e) {
+            logger.error("Error getting set size for key: {}", key, e);
+            return 0L;
+        }
+    }
 }
