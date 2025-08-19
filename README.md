@@ -1,5 +1,13 @@
-# 🚀 Distributed Job Scheduler
-> **Enterprise-Grade Job Orchestration Platform**  
+# 🚀 Distributed Job Sche### Architecture Highlights
+- **📈 Performance-First Design**: Every component optimized for scale
+- **🔄 Advanced Algorithms**: Graph theory + priority queues + load balancing
+- **⚡ Modern Tech Stack**: React 19, Java 24, Spring Boot 3.x
+- **📱 Real-time Dashboard**: Live metrics with WebSocket integration
+- **🛡️ Enterprise Features**: Security, monitoring, fault tolerance
+
+> 📋 **Technical Documentation**: 
+> - [PERFORMANCE_ANALYSIS.md](./PERFORMANCE_ANALYSIS.md) - Comprehensive benchmarks and scalability analysis
+> - [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) - Complete system architecture and design patterns**Enterprise-Grade Job Orchestration Platform**  
 > *Built by Shivani Nande*
 
 A sophisticated distributed job scheduling system architected with **Spring Boot** and **React 19**, featuring advanced algorithms for dependency resolution, intelligent load balancing, and horizontal scalability. This project demonstrates enterprise-level software engineering practices with comprehensive performance optimization.
