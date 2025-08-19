@@ -5,9 +5,12 @@
 - **📱 Real-time Dashboard**: Live metrics with WebSocket integration
 - **🛡️ Enterprise Features**: Security, monitoring, fault tolerance
 
-> 📋 **Technical Documentation**: 
+> 📋 **Portfolio & Technical Documentation**: 
+> - **[PORTFOLIO_SHOWCASE.md](./PORTFOLIO_SHOWCASE.md)** - Complete portfolio overview with verifiable metrics and technical depth
 > - [PERFORMANCE_ANALYSIS.md](./PERFORMANCE_ANALYSIS.md) - Comprehensive benchmarks and scalability analysis
-> - [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) - Complete system architecture and design patterns**Enterprise-Grade Job Orchestration Platform**  
+> - [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) - Complete system architecture and design patterns
+
+**Enterprise-Grade Job Orchestration Platform**  
 > *Built by Shivani Nande*
 
 A sophisticated distributed job scheduling system architected with **Spring Boot** and **React 19**, featuring advanced algorithms for dependency resolution, intelligent load balancing, and horizontal scalability. This project demonstrates enterprise-level software engineering practices with comprehensive performance optimization.
